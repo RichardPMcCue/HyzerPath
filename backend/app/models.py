@@ -148,6 +148,8 @@ class HoleNode(Base):
     hole_id = Column(Integer, ForeignKey("holes.hole_id"), nullable=False)
     node_type = Column(Enum('tee', 'landing_zone', 'mando', 'dogleg', 'basket', name='node_type_enum'), nullable=False)
     label = Column(String)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
 
     hole = relationship("Hole", back_populates="nodes")
     outgoing_edges = relationship("HoleEdge", foreign_keys="HoleEdge.from_node_id", back_populates="from_node")
