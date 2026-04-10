@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from enum import Enum
 
@@ -21,6 +21,8 @@ class DiscCreate(BaseModel):
     weight: Optional[int] = None
 
 class DiscResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     disc_id: int
     name: str
     manufacturer: str
@@ -32,9 +34,6 @@ class DiscResponse(BaseModel):
     fade: Optional[float] = None
     wear: Optional[float] = None
     weight: Optional[int] = None
-
-    class Config:
-        from_attributes = True 
 
 class DiscUpdate(BaseModel):
     name: Optional[str] = None

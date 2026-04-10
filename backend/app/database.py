@@ -5,7 +5,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-engine = create_engine(os.environ.get("DATABASE_URL"))
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./fallback.db")
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
