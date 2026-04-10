@@ -1,14 +1,43 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from typing import Optional
+import httpx
 
 from app.database import get_db
 from app.models import Disc
 from app.schemas import DiscCreate, DiscResponse, DiscUpdate
+from app.utils import map_discit_category
+
+DISCIT_API = "https://discit-api.fly.dev/disc"
 
 router = APIRouter(prefix="/bag", tags=["bag"])
 
 # Stub user until auth is implemented
 STUB_USER_ID = 1
+
+@router.get("/discs/search")
+async def search_discs(name: Optional[str] = None, brand: Optional[str] = None):
+    if name is None and brand is None:
+        raise HTTPException(status_code=400, detail="Empty Query")
+    params = {}
+    if name:
+        params["name"] = name
+    if brand:
+        params["brand"] = brand
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(DISCIT_API, params=params, timeout=10)
+            response.raise_for_status()
+            discs = response.json()
+            for disc in discs:
+                disc["disc_type"] = map_discit_category(disc["category"])
+            return discs
+
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        raise HTTPException(status_code=503, detail="External API call failed")
+
 
 @router.get("/discs", response_model=list[DiscResponse])
 async def get_discs(db: Session = Depends(get_db)):
