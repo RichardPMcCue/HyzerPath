@@ -4,16 +4,14 @@ from typing import Optional
 import httpx
 
 from app.database import get_db
-from app.models import Disc
+from app.models import Disc, User
 from app.schemas import DiscCreate, DiscResponse, DiscUpdate
 from app.utils import map_discit_category
+from app.dependencies import get_current_user
 
 DISCIT_API = "https://discit-api.fly.dev/disc"
 
 router = APIRouter(prefix="/bag", tags=["bag"])
-
-# Stub user until auth is implemented
-STUB_USER_ID = 1
 
 @router.get("/discs/search")
 async def search_discs(name: Optional[str] = None, brand: Optional[str] = None):
@@ -40,16 +38,16 @@ async def search_discs(name: Optional[str] = None, brand: Optional[str] = None):
 
 
 @router.get("/discs", response_model=list[DiscResponse])
-async def get_discs(db: Session = Depends(get_db)):
-    discs = db.query(Disc).filter(Disc.user_id == STUB_USER_ID).all()
+async def get_discs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    discs = db.query(Disc).filter(Disc.user_id == current_user.user_id).all()
     return discs
 
 
 @router.post("/discs", response_model=DiscResponse)
-async def create_disc(disc_in: DiscCreate, db: Session = Depends(get_db)):
+async def create_disc(disc_in: DiscCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     disc_dict = disc_in.model_dump()
     db_disc = Disc(
-        user_id=STUB_USER_ID,
+        user_id=current_user.user_id,
          **disc_dict
     )
     db.add(db_disc)
@@ -58,10 +56,10 @@ async def create_disc(disc_in: DiscCreate, db: Session = Depends(get_db)):
     return db_disc
 
 @router.get("/discs/{disc_id}", response_model=DiscResponse)
-async def get_disc(disc_id: int, db: Session = Depends(get_db)):
+async def get_disc(disc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     disc = db.query(Disc).filter(
         Disc.disc_id == disc_id,
-        Disc.user_id == STUB_USER_ID
+        Disc.user_id == current_user.user_id
     ).first()
     
     if disc is None:
@@ -70,10 +68,10 @@ async def get_disc(disc_id: int, db: Session = Depends(get_db)):
     return disc
 
 @router.patch("/discs/{disc_id}", response_model=DiscResponse)
-async def patch_disc(disc_in: DiscUpdate, disc_id: int, db: Session = Depends(get_db)):
+async def patch_disc(disc_in: DiscUpdate, disc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     disc = db.query(Disc).filter(
         Disc.disc_id == disc_id,
-        Disc.user_id == STUB_USER_ID
+        Disc.user_id == current_user.user_id
     ).first()
     
     if disc is None:
@@ -88,10 +86,10 @@ async def patch_disc(disc_in: DiscUpdate, disc_id: int, db: Session = Depends(ge
     return disc
 
 @router.delete("/discs/{disc_id}")
-async def delete_disc(disc_id: int, db: Session = Depends(get_db)):
+async def delete_disc(disc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     disc = db.query(Disc).filter(
         Disc.disc_id == disc_id,
-        Disc.user_id == STUB_USER_ID
+        Disc.user_id == current_user.user_id
     ).first()
 
     if disc is None:

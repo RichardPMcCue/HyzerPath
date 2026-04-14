@@ -2,11 +2,12 @@ import os
 import subprocess
 from fastapi import FastAPI, Header, HTTPException
 from dotenv import load_dotenv
-from app.routers import bag
+from app.routers import bag, auth
 
 load_dotenv()
 app = FastAPI()
 app.include_router(bag.router)
+app.include_router(auth.router)
 
 
 @app.post("/deploy")
