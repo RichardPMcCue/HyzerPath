@@ -23,6 +23,8 @@ jobs:
           pip install -r backend/requirements-dev.txt
 
       - name: Run Tests
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: python -m pytest backend/tests
 
       - name: POST Deploy Notification
