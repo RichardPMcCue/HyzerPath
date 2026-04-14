@@ -13,6 +13,7 @@ class User(Base):
     google_id = Column(String, unique=True, nullable=False)
     name = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+    is_admin = Column(Boolean)
 
     bags = relationship("Bag", back_populates="user")
     discs = relationship("Disc", back_populates="user")
@@ -117,8 +118,11 @@ class Course(Base):
 
     course_id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    location = Column(String)
+    city = Column(String)
+    state = Column(String)
+    address = Column(String)
     total_par = Column(Integer)
+    is_approved = Column(Boolean)
 
     holes = relationship("Hole", back_populates="course")
     rounds = relationship("Round", back_populates="course")
@@ -134,6 +138,7 @@ class Hole(Base):
     distance = Column(Integer)
     elevation = Column(Integer)
     updated_at = Column(DateTime, onupdate=datetime.utcnow)
+    is_approved = Column(Boolean)
 
     course = relationship("Course", back_populates="holes")
     nodes = relationship("HoleNode", back_populates="hole")
