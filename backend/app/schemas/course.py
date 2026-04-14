@@ -27,6 +27,7 @@ class HoleEdgeCreate(BaseModel):
     from_node_id: int
     to_node_id: int
     distance: int
+    fairway_width: int
 
 class HoleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -65,6 +66,7 @@ class HoleEdgeResponse(BaseModel):
     from_node_id: int
     to_node_id: int
     distance: int
+    fairway_width: int
 
 class HolePathResponse(BaseModel):
     nodes: list[HoleNodeResponse]

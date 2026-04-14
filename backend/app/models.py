@@ -170,11 +170,11 @@ class HoleEdge(Base):
     from_node_id = Column(Integer, ForeignKey("hole_nodes.hole_node_id"), nullable=False)
     to_node_id = Column(Integer, ForeignKey("hole_nodes.hole_node_id"), nullable=False)
     distance = Column(Integer, nullable=False)
+    fairway_width = Column(Integer)
 
     from_node = relationship("HoleNode", foreign_keys=[from_node_id], back_populates="outgoing_edges")
     to_node = relationship("HoleNode", foreign_keys=[to_node_id], back_populates="incoming_edges")
     edge_hazards = relationship("EdgeHazard", back_populates="edge")
-
 
 class HoleHazard(Base):
     __tablename__ = "hole_hazards"
