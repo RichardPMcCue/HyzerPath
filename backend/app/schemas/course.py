@@ -1,11 +1,32 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
+from enum import Enum
+
+class NodeType(str, Enum):
+    tee = "tee"
+    landing_zone = "landing_zone"
+    mando = "mando"
+    dogleg = "dogleg"
+    basket = "basket"
 
 class HoleCreate(BaseModel):
     hole_number: int
     par: int
     distance: int
     elevation: int
+
+class HoleNodeCreate(BaseModel):
+    node_type: NodeType
+    sequence: int
+    label: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    centerline_distance: Optional[float] = None
+
+class HoleEdgeCreate(BaseModel):
+    from_node_id: int
+    to_node_id: int
+    distance: int
 
 class HoleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -30,7 +51,7 @@ class HoleNodeResponse(BaseModel):
 
     hole_node_id: int
     hole_id: int
-    node_type: str
+    node_type: NodeType
     sequence: int
     label: Optional[str] = None
     latitude: Optional[float] = None

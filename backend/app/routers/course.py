@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.database import get_db
 from app.models import Course, User, Hole, HoleNode, HoleEdge
-from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse
+from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse, HoleNodeCreate, HoleEdgeCreate
 from app.dependencies import get_current_user
 from app.graph import dijkstra
 
@@ -78,6 +78,68 @@ async def get_path(
         total_distance=total_distance,
         node_count=len(path_nodes)
     )
+
+@router.post("/{course_id}/holes/{hole_id}/nodes", response_model=HoleNodeResponse)
+async def create_hole_node(
+    course_id: int,
+    hole_id: int,
+    node_in: HoleNodeCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    course = db.query(Course).filter(Course.course_id == course_id).first()
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    node_dict = node_in.model_dump()
+    node_dict["hole_id"] = hole_id
+    db_node = HoleNode(**node_dict)
+    db.add(db_node)
+    db.commit()
+    db.refresh(db_node)
+    return db_node
+
+
+@router.post("/{course_id}/holes/{hole_id}/edges", response_model=HoleEdgeResponse)
+async def create_hole_edge(
+    course_id: int,
+    hole_id: int,
+    edge_in: HoleEdgeCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    course = db.query(Course).filter(Course.course_id == course_id).first()
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    from_node = db.query(HoleNode).filter(
+        HoleNode.hole_node_id == edge_in.from_node_id,
+        HoleNode.hole_id == hole_id
+    ).first()
+    if from_node is None:
+        raise HTTPException(status_code=404, detail="from_node not found on this hole")
+
+    to_node = db.query(HoleNode).filter(
+        HoleNode.hole_node_id == edge_in.to_node_id,
+        HoleNode.hole_id == hole_id
+    ).first()
+    if to_node is None:
+        raise HTTPException(status_code=404, detail="to_node not found on this hole")
+
+    edge_dict = edge_in.model_dump()
+    db_edge = HoleEdge(**edge_dict)
+    db.add(db_edge)
+    db.commit()
+    db.refresh(db_edge)
+    return db_edge
 
 @router.get("", response_model=list[CourseResponse])
 async def get_courses(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
