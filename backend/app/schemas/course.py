@@ -25,6 +25,33 @@ class HoleUpdate(BaseModel):
     elevation: Optional[int] = None
     is_approved: Optional[bool] = None # needs admin protection
 
+class HoleNodeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    hole_node_id: int
+    hole_id: int
+    node_type: str
+    sequence: int
+    label: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    centerline_distance: Optional[float] = None
+
+class HoleEdgeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    hole_edge_id: int
+    from_node_id: int
+    to_node_id: int
+    distance: int
+
+class HolePathResponse(BaseModel):
+    nodes: list[HoleNodeResponse]
+    edges: list[HoleEdgeResponse]  # segments between nodes
+    total_distance: float
+    node_count: int
+    # later: recommendations: list[SegmentRecommendation]
+
 class CourseCreate(BaseModel):
     name: str
     city: str

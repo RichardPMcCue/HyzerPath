@@ -157,6 +157,7 @@ class HoleNode(Base):
     label = Column(String)
     latitude = Column(Float)
     longitude = Column(Float)
+    centerline_distance = Column(Float, nullable=True)
 
     hole = relationship("Hole", back_populates="nodes")
     outgoing_edges = relationship("HoleEdge", foreign_keys="HoleEdge.from_node_id", back_populates="from_node")
@@ -169,7 +170,6 @@ class HoleEdge(Base):
     from_node_id = Column(Integer, ForeignKey("hole_nodes.hole_node_id"), nullable=False)
     to_node_id = Column(Integer, ForeignKey("hole_nodes.hole_node_id"), nullable=False)
     distance = Column(Integer, nullable=False)
-    required_line_shape = Column(Enum('hyzer', 'anhyzer', 'flat', 'spike_hyzer', 'roller', name='line_shape_enum'), nullable=True)
 
     from_node = relationship("HoleNode", foreign_keys=[from_node_id], back_populates="outgoing_edges")
     to_node = relationship("HoleNode", foreign_keys=[to_node_id], back_populates="incoming_edges")

@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import Course, User, Hole
-from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse
+from app.models import Course, User, Hole, HoleNode, HoleEdge
+from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse
 from app.dependencies import get_current_user
+from app.graph import dijkstra
 
 router = APIRouter(prefix="/courses", tags=["course"])
 
@@ -23,6 +24,60 @@ async def create_hole(course_id: int, hole_in: HoleCreate, db: Session = Depends
     db.commit()
     db.refresh(db_hole)
     return db_hole
+
+@router.get("/{course_id}/holes/{hole_id}/path", response_model=HolePathResponse)
+async def get_path(
+    course_id: int,
+    hole_id: int,
+    start_node_id: Optional[int] = None,
+    end_node_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    nodes = db.query(HoleNode).filter(HoleNode.hole_id == hole_id).all()
+    edges = db.query(HoleEdge).filter(
+        HoleEdge.from_node_id.in_([n.hole_node_id for n in nodes])
+    ).all()
+
+    node_map = {n.hole_node_id: n for n in nodes}
+
+    tee = next((n for n in nodes if n.node_type == "tee"), None)
+    basket = next((n for n in nodes if n.node_type == "basket"), None)
+
+    start = node_map.get(start_node_id) if start_node_id else tee
+    end = node_map.get(end_node_id) if end_node_id else basket
+
+    if start is None or end is None:
+        raise HTTPException(status_code=400, detail="Could not resolve start or end node")
+
+    edge_tuples = [(e.from_node_id, e.to_node_id, e.distance) for e in edges]
+    path_ids = dijkstra(edge_tuples, start.hole_node_id, end.hole_node_id)
+
+    if not path_ids:
+        raise HTTPException(status_code=400, detail="No path found between start and end node")
+
+    path_nodes = [node_map[node_id] for node_id in path_ids]
+
+    edge_lookup = {(e.from_node_id, e.to_node_id): e for e in edges}
+
+    path_edges = []
+    total_distance = 0
+    for i in range(len(path_ids) - 1):
+        edge = edge_lookup.get((path_ids[i], path_ids[i + 1]))
+        if edge:
+            path_edges.append(edge)
+            total_distance += edge.distance
+
+    return HolePathResponse(
+        nodes=path_nodes,
+        edges=path_edges,
+        total_distance=total_distance,
+        node_count=len(path_nodes)
+    )
 
 @router.get("", response_model=list[CourseResponse])
 async def get_courses(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
