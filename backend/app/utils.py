@@ -59,3 +59,37 @@ def compute_centerline_distance(
             min_distance = dist
 
     return min_distance
+
+def compute_dynamic_centerline(fairway_nodes: list) -> list:
+    """
+    Takes a list of HoleNode objects where is_fairway=True,
+    sorted by sequence. Returns ordered list of (lat, lon) tuples
+    representing the estimated centerline.
+    """
+    sorted_nodes = sorted(
+        [n for n in fairway_nodes if n.latitude and n.longitude],
+        key=lambda n: n.sequence
+    )
+    return [(n.latitude, n.longitude) for n in sorted_nodes]
+
+
+def compute_fairway_width_at_sequence(fairway_nodes: list, sequence: int) -> Optional[float]:
+    """
+    Estimates fairway width at a given sequence point by finding
+    nodes at the same sequence and measuring their spread.
+    Falls back to neighbors if not enough nodes at exact sequence.
+    """
+    nearby = [n for n in fairway_nodes 
+              if abs(n.sequence - sequence) <= 1 
+              and n.latitude and n.longitude]
+    
+    if len(nearby) < 2:
+        return None
+    
+    lats = [n.latitude for n in nearby]
+    lons = [n.longitude for n in nearby]
+    
+    lat_spread = (max(lats) - min(lats)) * 364000
+    lon_spread = (max(lons) - min(lons)) * 297000
+    
+    return max(lat_spread, lon_spread)

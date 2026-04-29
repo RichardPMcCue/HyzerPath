@@ -3,10 +3,11 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import Course, User, Hole, HoleNode, HoleEdge
+from app.models import Course, User, Hole, HoleNode, HoleEdge, Disc, UserDiscStat
 from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse, HoleNodeCreate, HoleEdgeCreate
 from app.dependencies import get_current_user
-from app.graph import dijkstra
+from app.graph import dijkstra, compute_edge_weight
+from app.recommendation import SegmentRecommendation, recommend_path
 
 router = APIRouter(prefix="/courses", tags=["course"])
 
@@ -54,7 +55,7 @@ async def get_path(
     if start is None or end is None:
         raise HTTPException(status_code=400, detail="Could not resolve start or end node")
 
-    edge_tuples = [(e.from_node_id, e.to_node_id, e.distance) for e in edges]
+    edge_tuples = [(e.from_node_id, e.to_node_id, compute_edge_weight(e, node_map.get(e.to_node_id))) for e in edges]
     path_ids = dijkstra(edge_tuples, start.hole_node_id, end.hole_node_id)
 
     if not path_ids:
@@ -71,12 +72,25 @@ async def get_path(
         if edge:
             path_edges.append(edge)
             total_distance += edge.distance
+    
+    discs = db.query(Disc).filter(Disc.user_id == current_user.user_id).all()
+    disc_stats = db.query(UserDiscStat).filter(
+        UserDiscStat.user_id == current_user.user_id
+    ).all()
+    disc_distances = {stat.disc_id: stat.avg_distance for stat in disc_stats}
+
+    recommendations = recommend_path(
+        edges=path_edges,
+        discs=discs,
+        disc_distances=disc_distances
+    )
 
     return HolePathResponse(
         nodes=path_nodes,
         edges=path_edges,
         total_distance=total_distance,
-        node_count=len(path_nodes)
+        node_count=len(path_nodes),
+        recommendations=recommendations
     )
 
 @router.post("/{course_id}/holes/{hole_id}/nodes", response_model=HoleNodeResponse)

@@ -144,8 +144,6 @@ class Hole(Base):
     nodes = relationship("HoleNode", back_populates="hole")
     hole_hazards = relationship("HoleHazard", back_populates="hole")
     round_holes = relationship("RoundHole", back_populates="hole")
-    centerline_points = relationship("HoleCenterlinePoint", back_populates="hole", order_by="HoleCenterlinePoint.sequence")
-
 
 class HoleNode(Base):
     __tablename__ = "hole_nodes"
@@ -194,17 +192,6 @@ class EdgeHazard(Base):
     hazard_type = Column(String, nullable=False)
 
     edge = relationship("HoleEdge", back_populates="edge_hazards")
-
-class HoleCenterlinePoint(Base):
-    __tablename__ = "hole_centerline_points"
-
-    point_id = Column(Integer, primary_key=True)
-    hole_id = Column(Integer, ForeignKey("holes.hole_id"), nullable=False)
-    sequence = Column(Integer, nullable=False)
-    latitude = Column(Float, nullable=False)
-    longitude = Column(Float, nullable=False)
-
-    hole = relationship("Hole", back_populates="centerline_points")
 
 class Round(Base):
     __tablename__ = "rounds"

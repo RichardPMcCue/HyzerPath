@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from enum import Enum
+from app.recommendation import SegmentRecommendation
 
 class NodeType(str, Enum):
     tee = "tee"
@@ -22,12 +23,13 @@ class HoleNodeCreate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     centerline_distance: Optional[float] = None
+    is_fairway: bool = True
 
 class HoleEdgeCreate(BaseModel):
     from_node_id: int
     to_node_id: int
     distance: int
-    fairway_width: int
+    fairway_width: Optional[int] = None
 
 class HoleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -58,6 +60,7 @@ class HoleNodeResponse(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     centerline_distance: Optional[float] = None
+    is_fairway: bool
 
 class HoleEdgeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -66,14 +69,14 @@ class HoleEdgeResponse(BaseModel):
     from_node_id: int
     to_node_id: int
     distance: int
-    fairway_width: int
+    fairway_width: Optional[int] = None
 
 class HolePathResponse(BaseModel):
     nodes: list[HoleNodeResponse]
-    edges: list[HoleEdgeResponse]  # segments between nodes
+    edges: list[HoleEdgeResponse]
     total_distance: float
     node_count: int
-    # later: recommendations: list[SegmentRecommendation]
+    recommendations: list[SegmentRecommendation] = []
 
 class CourseCreate(BaseModel):
     name: str
