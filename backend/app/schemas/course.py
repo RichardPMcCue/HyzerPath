@@ -60,7 +60,7 @@ class HoleNodeResponse(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     centerline_distance: Optional[float] = None
-    is_fairway: bool
+    is_fairway: bool = True
 
 class HoleEdgeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
