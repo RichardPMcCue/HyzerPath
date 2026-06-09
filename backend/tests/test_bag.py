@@ -73,3 +73,53 @@ def test_search_discs(mock_client, client):
     assert len(discs) == 1
     assert discs[0]["name"] == "Buzzz"
     assert discs[0]["disc_type"] == "midrange"
+def test_upsert_and_get_disc_stats(client):
+    create = client.post("/bag/discs", json={
+        "name": "Destroyer",
+        "manufacturer": "Innova",
+        "disc_type": "distance_driver"
+    })
+    disc_id = create.json()["disc_id"]
+
+    # create
+    response = client.put(f"/bag/discs/{disc_id}/stats", json={
+        "avg_distance": 380,
+        "max_distance": 430
+    })
+    assert response.status_code == 200
+    assert response.json()["avg_distance"] == 380
+    stat_id = response.json()["stat_id"]
+
+    # update overwrites the same row
+    response = client.put(f"/bag/discs/{disc_id}/stats", json={
+        "avg_distance": 395,
+        "max_distance": 440,
+        "sample_size": 20
+    })
+    assert response.status_code == 200
+    assert response.json()["stat_id"] == stat_id
+    assert response.json()["avg_distance"] == 395
+
+    # list
+    response = client.get("/bag/stats")
+    assert response.status_code == 200
+    stats = response.json()
+    assert len(stats) == 1
+    assert stats[0]["disc_id"] == disc_id
+
+def test_upsert_stats_unknown_disc_404(client):
+    response = client.put("/bag/discs/9999/stats", json={"avg_distance": 300})
+    assert response.status_code == 404
+
+def test_delete_disc_stats(client):
+    create = client.post("/bag/discs", json={
+        "name": "Destroyer",
+        "manufacturer": "Innova",
+        "disc_type": "distance_driver"
+    })
+    disc_id = create.json()["disc_id"]
+    client.put(f"/bag/discs/{disc_id}/stats", json={"avg_distance": 380})
+
+    response = client.delete(f"/bag/discs/{disc_id}/stats")
+    assert response.status_code == 200
+    assert client.get("/bag/stats").json() == []

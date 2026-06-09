@@ -4,8 +4,8 @@ from typing import Optional
 import httpx
 
 from app.database import get_db
-from app.models import Disc, User
-from app.schemas import DiscCreate, DiscResponse, DiscUpdate
+from app.models import Disc, User, UserDiscStat
+from app.schemas import DiscCreate, DiscResponse, DiscUpdate, DiscStatUpsert, DiscStatResponse
 from app.utils import map_discit_category
 from app.dependencies import get_current_user
 
@@ -54,6 +54,57 @@ async def create_disc(disc_in: DiscCreate, db: Session = Depends(get_db), curren
     db.commit()
     db.refresh(db_disc)
     return db_disc
+
+@router.get("/stats", response_model=list[DiscStatResponse])
+async def get_disc_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(UserDiscStat).filter(UserDiscStat.user_id == current_user.user_id).all()
+
+
+@router.put("/discs/{disc_id}/stats", response_model=DiscStatResponse)
+async def upsert_disc_stat(
+    disc_id: int,
+    stat_in: DiscStatUpsert,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    disc = db.query(Disc).filter(
+        Disc.disc_id == disc_id,
+        Disc.user_id == current_user.user_id
+    ).first()
+    if disc is None:
+        raise HTTPException(status_code=404, detail="Disc not found")
+
+    stat = db.query(UserDiscStat).filter(
+        UserDiscStat.user_id == current_user.user_id,
+        UserDiscStat.disc_id == disc_id
+    ).first()
+
+    if stat is None:
+        stat = UserDiscStat(user_id=current_user.user_id, disc_id=disc_id)
+        db.add(stat)
+
+    stat.avg_distance = stat_in.avg_distance
+    stat.max_distance = stat_in.max_distance
+    stat.sample_size = stat_in.sample_size
+
+    db.commit()
+    db.refresh(stat)
+    return stat
+
+
+@router.delete("/discs/{disc_id}/stats")
+async def delete_disc_stat(disc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    stat = db.query(UserDiscStat).filter(
+        UserDiscStat.user_id == current_user.user_id,
+        UserDiscStat.disc_id == disc_id
+    ).first()
+    if stat is None:
+        raise HTTPException(status_code=404, detail="No stats for this disc")
+
+    db.delete(stat)
+    db.commit()
+    return {"message": "Disc stats deleted"}
+
 
 @router.get("/discs/{disc_id}", response_model=DiscResponse)
 async def get_disc(disc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

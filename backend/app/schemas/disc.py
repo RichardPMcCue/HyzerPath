@@ -35,6 +35,20 @@ class DiscResponse(BaseModel):
     wear: Optional[float] = None
     weight: Optional[int] = None
 
+class DiscStatUpsert(BaseModel):
+    avg_distance: int
+    max_distance: Optional[int] = None
+    sample_size: Optional[int] = None
+
+class DiscStatResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    stat_id: int
+    disc_id: int
+    avg_distance: int
+    max_distance: Optional[int] = None
+    sample_size: Optional[int] = None
+
 class DiscUpdate(BaseModel):
     name: Optional[str] = None
     manufacturer: Optional[str] = None
