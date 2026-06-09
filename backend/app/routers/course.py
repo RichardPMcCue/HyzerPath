@@ -1,3 +1,4 @@
+from collections import namedtuple
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -8,6 +9,10 @@ from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, 
 from app.dependencies import get_current_user
 from app.graph import dijkstra, compute_edge_weight
 from app.recommendation import SegmentRecommendation, recommend_path
+from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence
+from app.wind import get_wind
+
+CenterlinePoint = namedtuple("CenterlinePoint", ["latitude", "longitude"])
 
 router = APIRouter(prefix="/courses", tags=["course"])
 
@@ -32,9 +37,16 @@ async def get_path(
     hole_id: int,
     start_node_id: Optional[int] = None,
     end_node_id: Optional[int] = None,
+    mode: str = "balanced",
+    use_wind: bool = False,
+    wind_speed: Optional[float] = None,
+    wind_direction: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if mode not in ("conservative", "balanced", "aggressive"):
+        raise HTTPException(status_code=400, detail="mode must be conservative, balanced, or aggressive")
+
     hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
     if hole is None:
         raise HTTPException(status_code=404, detail="Hole not found")
@@ -55,7 +67,42 @@ async def get_path(
     if start is None or end is None:
         raise HTTPException(status_code=400, detail="Could not resolve start or end node")
 
-    edge_tuples = [(e.from_node_id, e.to_node_id, compute_edge_weight(e, node_map.get(e.to_node_id))) for e in edges]
+    # Dynamic centerline/width from fairway nodes, falling back to stored values
+    fairway_nodes = [n for n in nodes if n.is_fairway]
+    centerline_points = [
+        CenterlinePoint(lat, lon) for lat, lon in compute_dynamic_centerline(fairway_nodes)
+    ]
+
+    def effective_centerline_distance(node):
+        if node is None:
+            return None
+        if node.centerline_distance is not None:
+            return node.centerline_distance
+        if len(centerline_points) >= 2 and node.latitude is not None and node.longitude is not None:
+            return compute_centerline_distance(node.latitude, node.longitude, centerline_points)
+        return None
+
+    def effective_fairway_width(edge):
+        if edge.fairway_width:
+            return edge.fairway_width
+        to_node = node_map.get(edge.to_node_id)
+        if to_node is not None:
+            return compute_fairway_width_at_sequence(fairway_nodes, to_node.sequence)
+        return None
+
+    edge_tuples = [
+        (
+            e.from_node_id,
+            e.to_node_id,
+            compute_edge_weight(
+                e,
+                node_map.get(e.to_node_id),
+                centerline_distance=effective_centerline_distance(node_map.get(e.to_node_id)),
+                fairway_width=effective_fairway_width(e),
+            ),
+        )
+        for e in edges
+    ]
     path_ids = dijkstra(edge_tuples, start.hole_node_id, end.hole_node_id)
 
     if not path_ids:
@@ -72,17 +119,32 @@ async def get_path(
         if edge:
             path_edges.append(edge)
             total_distance += edge.distance
-    
+
     discs = db.query(Disc).filter(Disc.user_id == current_user.user_id).all()
     disc_stats = db.query(UserDiscStat).filter(
         UserDiscStat.user_id == current_user.user_id
     ).all()
     disc_distances = {stat.disc_id: stat.avg_distance for stat in disc_stats}
+    disc_max_distances = {stat.disc_id: stat.max_distance for stat in disc_stats}
+
+    # Wind: explicit params win; otherwise fetch live conditions at the tee
+    resolved_wind_speed = wind_speed or 0.0
+    resolved_wind_direction = wind_direction
+    if use_wind and wind_speed is None and start.latitude is not None and start.longitude is not None:
+        wind = await get_wind(start.latitude, start.longitude)
+        if wind:
+            resolved_wind_speed = wind["speed"]
+            resolved_wind_direction = wind["direction"]
 
     recommendations = recommend_path(
-        edges=path_edges,
+        path_nodes=path_nodes,
+        edge_lookup=edge_lookup,
         discs=discs,
-        disc_distances=disc_distances
+        disc_distances=disc_distances,
+        disc_max_distances=disc_max_distances,
+        wind_speed=resolved_wind_speed,
+        wind_direction=resolved_wind_direction,
+        mode=mode,
     )
 
     return HolePathResponse(

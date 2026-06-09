@@ -36,14 +36,21 @@ def dijkstra(edges: list, start_id: int, end_id: int, node_map: dict = None) -> 
 
     return []
 
-def compute_edge_weight(edge, to_node=None, fairway_nodes=None) -> float:
+def compute_edge_weight(edge, to_node=None, centerline_distance=None, fairway_width=None) -> float:
     base = 1.0  # one throw = base cost of 1
-    
+
+    # Prefer explicitly computed values (dynamic centerline/width), fall back
+    # to what's stored on the node/edge.
+    if centerline_distance is None and to_node is not None:
+        centerline_distance = to_node.centerline_distance
+    if fairway_width is None:
+        fairway_width = edge.fairway_width
+
     centerline_penalty = 0.0
-    if to_node and to_node.centerline_distance is not None:
-        if edge.fairway_width:
-            centerline_penalty = to_node.centerline_distance / edge.fairway_width
+    if centerline_distance is not None:
+        if fairway_width:
+            centerline_penalty = centerline_distance / fairway_width
         else:
-            centerline_penalty = to_node.centerline_distance / 100.0
-    
+            centerline_penalty = centerline_distance / 100.0
+
     return base + centerline_penalty

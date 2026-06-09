@@ -12,6 +12,38 @@ def map_discit_category(category: str) -> Optional[DiscType]:
     }
     return mapping.get(category)
 
+def haversine_feet(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two lat/lon points, in feet."""
+    earth_radius_ft = 20902231.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    return 2 * earth_radius_ft * math.asin(math.sqrt(a))
+
+
+def bearing_between(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Initial bearing in degrees (0-360, 0 = north) from point 1 to point 2."""
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dlam = math.radians(lon2 - lon1)
+
+    x = math.sin(dlam) * math.cos(phi2)
+    y = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(dlam)
+    return (math.degrees(math.atan2(x, y)) + 360.0) % 360.0
+
+
+def angle_diff(bearing_a: float, bearing_b: float) -> float:
+    """Signed smallest difference bearing_a - bearing_b, in (-180, 180].
+    Positive = bearing_a is clockwise (right) of bearing_b."""
+    diff = (bearing_a - bearing_b) % 360.0
+    if diff > 180.0:
+        diff -= 360.0
+    return diff
+
+
 def point_to_segment_distance(
     point_lat: float, point_lon: float,
     seg_start_lat: float, seg_start_lon: float,

@@ -156,6 +156,7 @@ class HoleNode(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     centerline_distance = Column(Float, nullable=True)
+    is_fairway = Column(Boolean, nullable=False, default=True, server_default="true")
 
     hole = relationship("Hole", back_populates="nodes")
     outgoing_edges = relationship("HoleEdge", foreign_keys="HoleEdge.from_node_id", back_populates="from_node")
