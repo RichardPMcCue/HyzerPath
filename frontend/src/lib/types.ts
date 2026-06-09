@@ -22,6 +22,20 @@ export interface DiscStat {
 	sample_size: number | null;
 }
 
+export interface RoundHoleScore {
+	hole_id: number;
+	score: number;
+}
+
+export interface Round {
+	round_id: number;
+	course_id: number;
+	bag_id: number;
+	played_at: string;
+	total_score: number | null;
+	round_holes: RoundHoleScore[];
+}
+
 export interface ThrowMeasurement {
 	throw_id: number;
 	session_id: number;
@@ -98,6 +112,7 @@ export interface HoleEdge {
 }
 
 export type ShotShape = 'straight' | 'hyzer' | 'anhyzer' | 'spike_hyzer' | 'flex';
+export type ThrowType = 'drive' | 'placement' | 'approach' | 'putt';
 export type CaddieMode = 'conservative' | 'balanced' | 'aggressive';
 
 export interface SegmentRecommendation {
@@ -106,6 +121,7 @@ export interface SegmentRecommendation {
 	distance: number;
 	effective_distance: number;
 	shot_shape: ShotShape;
+	throw_type: ThrowType;
 	from_node_id: number;
 	to_node_id: number;
 	hazards: string[];
@@ -118,4 +134,6 @@ export interface HolePath {
 	total_distance: number;
 	node_count: number;
 	recommendations: SegmentRecommendation[];
+	/** Closed ring of [lat, lon] pairs tracing the fairway corridor */
+	fairway_polygon: [number, number][];
 }

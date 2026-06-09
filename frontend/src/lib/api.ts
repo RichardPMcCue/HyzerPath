@@ -7,6 +7,8 @@ import type {
 	DiscItResult,
 	DiscStat,
 	HolePath,
+	Round,
+	RoundHoleScore,
 	ThrowMeasurement,
 	ThrowSession
 } from '$lib/types';
@@ -93,17 +95,39 @@ export const api = {
 	getHolePath: (
 		courseId: number,
 		holeId: number,
-		opts: { mode?: CaddieMode; useWind?: boolean; startNodeId?: number } = {}
+		opts: {
+			mode?: CaddieMode;
+			useWind?: boolean;
+			startNodeId?: number;
+			lie?: { latitude: number; longitude: number };
+		} = {}
 	) => {
 		const params = new URLSearchParams();
 		if (opts.mode) params.set('mode', opts.mode);
 		if (opts.useWind) params.set('use_wind', 'true');
 		if (opts.startNodeId) params.set('start_node_id', String(opts.startNodeId));
+		if (opts.lie) {
+			params.set('lie_latitude', String(opts.lie.latitude));
+			params.set('lie_longitude', String(opts.lie.longitude));
+		}
 		const qs = params.toString();
 		return request<HolePath>(
 			`/courses/${courseId}/holes/${holeId}/path${qs ? `?${qs}` : ''}`
 		);
-	}
+	},
+
+	// --- rounds ---
+	startRound: (courseId: number) =>
+		request<Round>('/rounds', { method: 'POST', body: JSON.stringify({ course_id: courseId }) }),
+	getRound: (roundId: number) => request<Round>(`/rounds/${roundId}`),
+	listRounds: () => request<Round[]>('/rounds'),
+	setHoleScore: (roundId: number, holeId: number, score: number) =>
+		request<RoundHoleScore>(`/rounds/${roundId}/holes/${holeId}`, {
+			method: 'PUT',
+			body: JSON.stringify({ score })
+		}),
+	finishRound: (roundId: number) =>
+		request<Round>(`/rounds/${roundId}/finish`, { method: 'POST' })
 };
 
 export function loginUrl(): string {

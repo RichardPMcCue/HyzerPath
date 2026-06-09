@@ -6,8 +6,13 @@
 
 	let {
 		nodes,
-		recommendations
-	}: { nodes: HoleNode[]; recommendations: SegmentRecommendation[] } = $props();
+		recommendations,
+		fairwayPolygon = []
+	}: {
+		nodes: HoleNode[];
+		recommendations: SegmentRecommendation[];
+		fairwayPolygon?: [number, number][];
+	} = $props();
 
 	let container = $state<HTMLDivElement>()!;
 	let map: maplibregl.Map | null = null;
@@ -50,8 +55,29 @@
 		return { type: 'FeatureCollection', features };
 	}
 
+	function fairwayGeoJSON(): FeatureCollection {
+		if (fairwayPolygon.length < 4) return { type: 'FeatureCollection', features: [] };
+		return {
+			type: 'FeatureCollection',
+			features: [
+				{
+					type: 'Feature',
+					properties: {},
+					geometry: {
+						type: 'Polygon',
+						// API sends [lat, lon]; GeoJSON wants [lon, lat]
+						coordinates: [fairwayPolygon.map(([lat, lon]) => [lon, lat])]
+					}
+				}
+			]
+		};
+	}
+
 	function render() {
 		if (!map || !loaded) return;
+
+		const fairwaySource = map.getSource('fairway') as maplibregl.GeoJSONSource | undefined;
+		if (fairwaySource) fairwaySource.setData(fairwayGeoJSON());
 
 		const source = map.getSource('throws') as maplibregl.GeoJSONSource | undefined;
 		if (source) source.setData(throwLineGeoJSON());
@@ -62,10 +88,13 @@
 			const el = document.createElement('div');
 			el.className = 'hole-marker';
 			const dim = skipped.has(node.hole_node_id);
-			el.style.cssText = `width:${node.node_type === 'tee' || node.node_type === 'basket' ? 16 : 11}px;
-				height:${node.node_type === 'tee' || node.node_type === 'basket' ? 16 : 11}px;
-				border-radius:9999px;background:${nodeColor(node.node_type)};
-				border:2px solid #0c1210;opacity:${dim ? 0.45 : 1}`;
+			const isLie = node.hole_node_id === 0; // virtual node at the player's position
+			const big = isLie || node.node_type === 'tee' || node.node_type === 'basket';
+			el.style.cssText = `width:${big ? 16 : 11}px;
+				height:${big ? 16 : 11}px;
+				border-radius:9999px;background:${isLie ? '#38bdf8' : nodeColor(node.node_type)};
+				border:2px solid #0c1210;opacity:${dim ? 0.45 : 1};
+				${isLie ? 'box-shadow:0 0 0 5px rgba(56,189,248,0.3);' : ''}`;
 			new maplibregl.Marker({ element: el })
 				.setLngLat([node.longitude!, node.latitude!])
 				.addTo(map);
@@ -100,6 +129,22 @@
 		});
 
 		map.on('load', () => {
+			// Fairway corridor under everything else: shows *why* the line goes
+			// where it does (doglegs, no-fly zones are simply outside it)
+			map!.addSource('fairway', { type: 'geojson', data: fairwayGeoJSON() });
+			map!.addLayer({
+				id: 'fairway-fill',
+				type: 'fill',
+				source: 'fairway',
+				paint: { 'fill-color': '#34d399', 'fill-opacity': 0.14 }
+			});
+			map!.addLayer({
+				id: 'fairway-outline',
+				type: 'line',
+				source: 'fairway',
+				paint: { 'line-color': '#34d399', 'line-opacity': 0.45, 'line-width': 1.5 }
+			});
+
 			map!.addSource('throws', { type: 'geojson', data: throwLineGeoJSON() });
 			map!.addLayer({
 				id: 'throw-lines',
@@ -121,6 +166,7 @@
 
 	$effect(() => {
 		recommendations;
+		fairwayPolygon;
 		render();
 	});
 </script>

@@ -58,7 +58,11 @@
 
 <main class="space-y-4 px-4 pt-2">
 	{#if path}
-		<HoleMap nodes={path.nodes} recommendations={path.recommendations} />
+		<HoleMap
+			nodes={path.nodes}
+			recommendations={path.recommendations}
+			fairwayPolygon={path.fairway_polygon}
+		/>
 	{/if}
 
 	<!-- Mode + wind controls -->

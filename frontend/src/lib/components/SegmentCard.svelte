@@ -13,6 +13,14 @@
 
 	const shape = $derived(shapeStyle[rec.shot_shape] ?? shapeStyle.straight);
 	const playsDifferent = $derived(Math.abs(rec.effective_distance - rec.distance) >= 5);
+
+	const throwTypeLabel: Record<string, string> = {
+		drive: 'Drive',
+		placement: 'Placement',
+		approach: 'Approach',
+		putt: 'Putt'
+	};
+	const isPutt = $derived(rec.throw_type === 'putt');
 </script>
 
 <div class="rounded-2xl border border-edge bg-card p-4">
@@ -24,23 +32,26 @@
 				{index + 1}
 			</span>
 			<div>
-				<p class="font-semibold">{rec.disc}</p>
+				<p class="font-semibold">{isPutt ? 'Just putt it 🎯' : rec.disc}</p>
 				<p class="text-xs text-ink-dim">
-					{rec.distance} ft
+					<span class="font-medium text-ink">{throwTypeLabel[rec.throw_type] ?? 'Drive'}</span>
+					· {rec.distance} ft
 					{#if playsDifferent}
 						<span class="text-amber-300"> · plays {rec.effective_distance} ft</span>
 					{/if}
 				</p>
 			</div>
 		</div>
-		<span
-			class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold {shape.classes}"
-		>
-			<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" d={shape.arrow} />
-			</svg>
-			{shape.label}
-		</span>
+		{#if !isPutt}
+			<span
+				class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold {shape.classes}"
+			>
+				<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" d={shape.arrow} />
+				</svg>
+				{shape.label}
+			</span>
+		{/if}
 	</div>
 
 	{#if rec.hazards.length > 0 || rec.skipped_node_ids.length > 0}

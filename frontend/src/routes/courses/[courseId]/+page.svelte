@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import type { Course } from '$lib/types';
 
@@ -7,6 +8,18 @@
 
 	let course = $state<Course | null>(null);
 	let error = $state<string | null>(null);
+	let startingRound = $state(false);
+
+	async function startRound() {
+		startingRound = true;
+		try {
+			const round = await api.startRound(courseId);
+			goto(`/rounds/${round.round_id}`);
+		} catch (e) {
+			error = (e as Error).message;
+			startingRound = false;
+		}
+	}
 
 	$effect(() => {
 		api
@@ -28,10 +41,21 @@
 		Courses
 	</a>
 	{#if course}
-		<h1 class="text-2xl font-bold">{course.name}</h1>
-		<p class="mt-0.5 text-xs text-ink-dim">
-			{course.city}, {course.state} · Par {course.total_par}
-		</p>
+		<div class="flex items-end justify-between">
+			<div>
+				<h1 class="text-2xl font-bold">{course.name}</h1>
+				<p class="mt-0.5 text-xs text-ink-dim">
+					{course.city}, {course.state} · Par {course.total_par}
+				</p>
+			</div>
+			<button
+				class="rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-surface transition active:scale-95 disabled:opacity-50"
+				onclick={startRound}
+				disabled={startingRound}
+			>
+				{startingRound ? 'Starting…' : '▶ Play'}
+			</button>
+		</div>
 	{/if}
 </header>
 
