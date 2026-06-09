@@ -4,7 +4,7 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
 from dotenv import load_dotenv
-from app.routers import bag, auth, course, throws
+from app.routers import bag, auth, course, throws, rounds
 
 load_dotenv()
 
@@ -35,6 +35,7 @@ app.include_router(bag.router)
 app.include_router(auth.router)
 app.include_router(course.router)
 app.include_router(throws.router)
+app.include_router(rounds.router)
 
 def custom_openapi():
     if app.openapi_schema:
