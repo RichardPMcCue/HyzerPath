@@ -1,8 +1,13 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, Enum
 from sqlalchemy.orm import relationship, declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
 
 Base = declarative_base()
+
+
+def utcnow() -> datetime:
+    """Naive-UTC timestamp (datetime.utcnow is deprecated in Python 3.12+)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class User(Base):
@@ -12,7 +17,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=False)
     google_id = Column(String, unique=True, nullable=False)
     name = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     is_admin = Column(Boolean)
 
     bags = relationship("Bag", back_populates="user")
@@ -48,7 +53,7 @@ class UserStat(Base):
     gir_c1 = Column(Float)
     gir_c2 = Column(Float)
     parked = Column(Float)
-    computed_at = Column(DateTime, default=datetime.utcnow)
+    computed_at = Column(DateTime, default=utcnow)
 
     user = relationship("User", back_populates="user_stats")
 
@@ -62,7 +67,7 @@ class UserDiscStat(Base):
     avg_distance = Column(Integer)
     max_distance = Column(Integer)
     sample_size = Column(Integer)
-    measured_at = Column(DateTime, default=datetime.utcnow)
+    measured_at = Column(DateTime, default=utcnow)
 
     user = relationship("User", back_populates="disc_stats")
     disc = relationship("Disc", back_populates="disc_stats")
@@ -78,7 +83,7 @@ class ThrowSession(Base):
     label = Column(String)
     start_latitude = Column(Float, nullable=False)
     start_longitude = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     user = relationship("User", back_populates="throw_sessions")
     throws = relationship("ThrowMeasurement", back_populates="session", cascade="all, delete-orphan")
@@ -93,7 +98,7 @@ class ThrowMeasurement(Base):
     end_latitude = Column(Float, nullable=False)
     end_longitude = Column(Float, nullable=False)
     distance_ft = Column(Float, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     session = relationship("ThrowSession", back_populates="throws")
     disc = relationship("Disc")
@@ -106,7 +111,7 @@ class Bag(Base):
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     name = Column(String, nullable=False)
     is_active = Column(Boolean, default=False, nullable=False)
-    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, onupdate=utcnow)
 
     user = relationship("User", back_populates="bags")
     bag_discs = relationship("BagDisc", back_populates="bag")
@@ -138,7 +143,7 @@ class Disc(Base):
     wear = Column(Float)
     weight = Column(Integer)
     color = Column(String)
-    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, onupdate=utcnow)
 
     user = relationship("User", back_populates="discs")
     bag_discs = relationship("BagDisc", back_populates="disc")
@@ -169,7 +174,7 @@ class Hole(Base):
     par = Column(Integer, nullable=False)
     distance = Column(Integer)
     elevation = Column(Integer)
-    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, onupdate=utcnow)
     is_approved = Column(Boolean)
 
     course = relationship("Course", back_populates="holes")
@@ -233,7 +238,7 @@ class Round(Base):
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     course_id = Column(Integer, ForeignKey("courses.course_id"), nullable=False)
     bag_id = Column(Integer, ForeignKey("bags.bag_id"), nullable=False)
-    played_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    played_at = Column(DateTime, default=utcnow, nullable=False)
     total_score = Column(Integer)
 
     user = relationship("User", back_populates="rounds")
@@ -270,8 +275,12 @@ class RoundThrow(Base):
     end_latitude = Column(Float)
     end_longitude = Column(Float)
     distance_ft = Column(Float)
+    # Zone-based detailed scoring (no GPS needed): where the throw landed and,
+    # after an OB, where the penalty drop is taken
+    landing_zone = Column(String)  # basket | c1 | c2 | fairway | off_fairway | ob
+    drop_zone = Column(String)     # c1 | c2 | fairway | off_fairway | tee_pad
     is_holed = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     round = relationship("Round", back_populates="throws")
     disc = relationship("Disc")
@@ -289,7 +298,7 @@ class RoundStat(Base):
     gir_c1 = Column(Float)
     gir_c2 = Column(Float)
     parked = Column(Float)
-    computed_at = Column(DateTime, default=datetime.utcnow)
+    computed_at = Column(DateTime, default=utcnow)
 
     user = relationship("User", back_populates="round_stats")
     round = relationship("Round", back_populates="round_stats")

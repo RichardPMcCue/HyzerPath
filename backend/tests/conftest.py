@@ -6,7 +6,7 @@ from app.main import app
 from app.database import get_db
 from app.models import Base, User
 from jose import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 TEST_DATABASE_URL = "sqlite:///./test.db"
@@ -33,7 +33,7 @@ def client():
     db.close()
 
     token = jwt.encode(
-        {"user_id": 1, "exp": datetime.utcnow() + timedelta(days=1)},
+        {"user_id": 1, "exp": datetime.now(timezone.utc) + timedelta(days=1)},
         os.environ.get("JWT_SECRET"),
         algorithm="HS256"
     )

@@ -1,7 +1,7 @@
 import os
 import httpx
 from urllib.parse import urlencode
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 from jose import jwt
@@ -66,7 +66,7 @@ async def callback(code: str, db: Session = Depends(get_db)):
 
     payload = {
         "user_id": user.user_id,
-        "exp": datetime.utcnow() + timedelta(days=7)
+        "exp": datetime.now(timezone.utc) + timedelta(days=7)
     }
     token = jwt.encode(payload, os.environ.get("JWT_SECRET"), algorithm="HS256")
 
