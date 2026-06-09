@@ -164,6 +164,24 @@ def compute_fairway_polygon(fairway_nodes: list, edges: list, default_width: flo
     return ring
 
 
+def point_in_polygon(lat: float, lon: float, ring: list) -> bool:
+    """Ray-casting point-in-polygon test. ring is a list of (lat, lon) tuples
+    (closed or open). Used for fairway-hit stats."""
+    if len(ring) < 3:
+        return False
+    inside = False
+    j = len(ring) - 1
+    for i in range(len(ring)):
+        yi, xi = ring[i]
+        yj, xj = ring[j]
+        if (xi > lon) != (xj > lon):
+            intersect_lat = (yj - yi) * (lon - xi) / (xj - xi) + yi
+            if lat < intersect_lat:
+                inside = not inside
+        j = i
+    return inside
+
+
 def compute_fairway_width_at_sequence(fairway_nodes: list, sequence: int) -> Optional[float]:
     """
     Estimates fairway width at a given sequence point by finding

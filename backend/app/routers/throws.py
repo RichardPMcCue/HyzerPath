@@ -28,23 +28,29 @@ def _get_session(session_id: int, db: Session, user: User) -> ThrowSession:
 
 
 def _sync_disc_stat(disc_id: int, db: Session, user: User) -> None:
-    """Recompute UserDiscStat from all measured throws with this disc, so the
-    recommendation engine learns from field work automatically."""
-    avg_dist, max_dist, count = db.query(
-        func.avg(ThrowMeasurement.distance_ft),
-        func.max(ThrowMeasurement.distance_ft),
-        func.count(ThrowMeasurement.throw_id),
-    ).join(ThrowSession).filter(
+    """Recompute UserDiscStat from every measured throw with this disc —
+    field-work sessions and live-round throws alike — so the recommendation
+    engine learns automatically."""
+    from app.models import Round, RoundThrow
+
+    measured = [d for (d,) in db.query(ThrowMeasurement.distance_ft).join(ThrowSession).filter(
         ThrowSession.user_id == user.user_id,
-        ThrowMeasurement.disc_id == disc_id
-    ).one()
+        ThrowMeasurement.disc_id == disc_id,
+        ThrowMeasurement.distance_ft.isnot(None),
+    ).all()]
+    round_throws = [d for (d,) in db.query(RoundThrow.distance_ft).join(Round).filter(
+        Round.user_id == user.user_id,
+        RoundThrow.disc_id == disc_id,
+        RoundThrow.distance_ft.isnot(None),
+    ).all()]
+    distances = measured + round_throws
 
     stat = db.query(UserDiscStat).filter(
         UserDiscStat.user_id == user.user_id,
         UserDiscStat.disc_id == disc_id
     ).first()
 
-    if count == 0:
+    if not distances:
         if stat is not None:
             db.delete(stat)
         return
@@ -52,9 +58,9 @@ def _sync_disc_stat(disc_id: int, db: Session, user: User) -> None:
     if stat is None:
         stat = UserDiscStat(user_id=user.user_id, disc_id=disc_id)
         db.add(stat)
-    stat.avg_distance = round(avg_dist)
-    stat.max_distance = round(max_dist)
-    stat.sample_size = count
+    stat.avg_distance = round(sum(distances) / len(distances))
+    stat.max_distance = round(max(distances))
+    stat.sample_size = len(distances)
 
 
 @router.post("/sessions", response_model=ThrowSessionResponse)

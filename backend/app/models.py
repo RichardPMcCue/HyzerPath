@@ -241,6 +241,7 @@ class Round(Base):
     bag = relationship("Bag", back_populates="rounds")
     round_holes = relationship("RoundHole", back_populates="round")
     round_stats = relationship("RoundStat", back_populates="round")
+    throws = relationship("RoundThrow", back_populates="round", cascade="all, delete-orphan")
 
 
 class RoundHole(Base):
@@ -252,6 +253,28 @@ class RoundHole(Base):
 
     round = relationship("Round", back_populates="round_holes")
     hole = relationship("Hole", back_populates="round_holes")
+
+
+class RoundThrow(Base):
+    """Every throw of a live round: where it started, where it landed, what
+    was thrown. Powers C1/C2 putting, fairway hits, and per-disc round stats."""
+    __tablename__ = "round_throws"
+
+    round_throw_id = Column(Integer, primary_key=True)
+    round_id = Column(Integer, ForeignKey("rounds.round_id"), nullable=False)
+    hole_id = Column(Integer, ForeignKey("holes.hole_id"), nullable=False)
+    throw_number = Column(Integer, nullable=False)
+    disc_id = Column(Integer, ForeignKey("discs.disc_id"), nullable=True)
+    start_latitude = Column(Float)
+    start_longitude = Column(Float)
+    end_latitude = Column(Float)
+    end_longitude = Column(Float)
+    distance_ft = Column(Float)
+    is_holed = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    round = relationship("Round", back_populates="throws")
+    disc = relationship("Disc")
 
 
 class RoundStat(Base):

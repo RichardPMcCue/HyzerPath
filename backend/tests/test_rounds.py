@@ -96,3 +96,67 @@ def test_path_from_lie_replans(client):
     assert recs[0]["throw_type"] == "approach"
     # The lie appears in the returned path nodes
     assert from_lie["nodes"][0]["label"] == "Your lie"
+
+
+def test_record_round_throws_and_stats(client):
+    """Drive into the fairway, approach to C1, holed putt -> stats add up."""
+    cid, _ = seed_course(client)
+    hid, ids = seed_mapped_hole(client, cid)
+    disc_id = add_disc_with_stats(client, avg=250)
+    rid = client.post("/rounds", json={"course_id": cid}).json()["round_id"]
+
+    tee_lat, basket_lat = 40.0, 40.0 + 300 / 364000
+    drive_end = 40.0 + 200 / 364000           # 200ft up the middle (in the corridor)
+    putt_start = basket_lat - 20 / 364000     # 20ft out: C1
+
+    # Drive (tee -> 200ft), tagged with the disc
+    r = client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 1, "disc_id": disc_id,
+        "start_latitude": tee_lat, "start_longitude": -105.0,
+        "end_latitude": drive_end, "end_longitude": -105.0
+    })
+    assert r.status_code == 200
+    assert abs(r.json()["distance_ft"] - 200) <= 3
+
+    # Approach (200ft -> 20ft out)
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 2,
+        "start_latitude": drive_end, "start_longitude": -105.0,
+        "end_latitude": putt_start, "end_longitude": -105.0
+    })
+    # Holed putt from C1
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 3, "is_holed": True,
+        "start_latitude": putt_start, "start_longitude": -105.0,
+        "end_latitude": basket_lat, "end_longitude": -105.0
+    })
+
+    stats = client.get(f"/rounds/{rid}/stats").json()
+    assert stats["holes_with_throws"] == 1
+    assert stats["c1_putts_attempted"] == 1
+    assert stats["c1_putts_made"] == 1
+    assert stats["fairway_attempts"] == 1
+    assert stats["fairway_hits"] == 1
+
+    # The tagged drive feeds disc stats (combined with the 1 seeded manual stat... 
+    # manual upsert is replaced by sync): sample includes the round throw
+    bag_stats = client.get("/bag/stats").json()
+    disc_stat = next(s for s in bag_stats if s["disc_id"] == disc_id)
+    assert disc_stat["sample_size"] >= 1
+
+
+def test_delete_disc_with_stats_and_throws(client):
+    """Deleting a disc that has stats and recorded throws must not 500."""
+    cid, _ = seed_course(client)
+    hid, _ = seed_mapped_hole(client, cid)
+    disc_id = add_disc_with_stats(client, avg=300)
+    rid = client.post("/rounds", json={"course_id": cid}).json()["round_id"]
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 1, "disc_id": disc_id,
+        "start_latitude": 40.0, "start_longitude": -105.0,
+        "end_latitude": 40.0005, "end_longitude": -105.0
+    })
+
+    response = client.delete(f"/bag/discs/{disc_id}")
+    assert response.status_code == 200
+    assert client.get("/bag/discs").json() == []
