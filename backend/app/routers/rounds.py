@@ -5,9 +5,12 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import Bag, Course, Disc, Hole, HoleNode, HoleEdge, Round, RoundHole, RoundThrow, User
 from app.schemas import (
-    RoundCreate, RoundHoleResponse, RoundHoleScore, RoundResponse,
+    RoundCreate, RoundUpdate, RoundHoleResponse, RoundHoleScore, RoundResponse,
     RoundThrowCreate, RoundThrowResponse, RoundStatsResponse,
 )
+
+VALID_TRACKING_MODES = ("discs", "lies", "detail", "score")
+VALID_LAYOUTS = ("full", "front9", "back9")
 from app.utils import haversine_feet, compute_fairway_polygon, point_in_polygon
 
 C1_FT = 33.0   # circle 1: 10 meters
@@ -43,10 +46,41 @@ async def start_round(round_in: RoundCreate, db: Session = Depends(get_db), curr
     course = db.query(Course).filter(Course.course_id == round_in.course_id).first()
     if course is None:
         raise HTTPException(status_code=404, detail="Course not found")
+    if round_in.tracking_mode not in VALID_TRACKING_MODES:
+        raise HTTPException(status_code=400, detail=f"tracking_mode must be one of {VALID_TRACKING_MODES}")
+    if round_in.layout not in VALID_LAYOUTS:
+        raise HTTPException(status_code=400, detail=f"layout must be one of {VALID_LAYOUTS}")
 
     bag = _get_or_create_bag(db, current_user)
-    round_ = Round(user_id=current_user.user_id, course_id=round_in.course_id, bag_id=bag.bag_id)
+    round_ = Round(
+        user_id=current_user.user_id,
+        course_id=round_in.course_id,
+        bag_id=bag.bag_id,
+        tracking_mode=round_in.tracking_mode,
+        layout=round_in.layout,
+    )
     db.add(round_)
+    db.commit()
+    db.refresh(round_)
+    return round_
+
+
+@router.patch("/{round_id}", response_model=RoundResponse)
+async def update_round(
+    round_id: int,
+    round_in: RoundUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    round_ = _get_round(round_id, db, current_user)
+    if round_in.tracking_mode is not None:
+        if round_in.tracking_mode not in VALID_TRACKING_MODES:
+            raise HTTPException(status_code=400, detail=f"tracking_mode must be one of {VALID_TRACKING_MODES}")
+        round_.tracking_mode = round_in.tracking_mode
+    if round_in.layout is not None:
+        if round_in.layout not in VALID_LAYOUTS:
+            raise HTTPException(status_code=400, detail=f"layout must be one of {VALID_LAYOUTS}")
+        round_.layout = round_in.layout
     db.commit()
     db.refresh(round_)
     return round_

@@ -240,6 +240,10 @@ class Round(Base):
     bag_id = Column(Integer, ForeignKey("bags.bag_id"), nullable=False)
     played_at = Column(DateTime, default=utcnow, nullable=False)
     total_score = Column(Integer)
+    # Chosen at round setup: how to score (discs | lies | detail | score)
+    # and which holes to play (full | front9 | back9)
+    tracking_mode = Column(String, default="lies", server_default="lies", nullable=False)
+    layout = Column(String, default="full", server_default="full", nullable=False)
 
     user = relationship("User", back_populates="rounds")
     course = relationship("Course", back_populates="rounds")

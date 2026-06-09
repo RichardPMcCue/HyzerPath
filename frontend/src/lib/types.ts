@@ -27,12 +27,17 @@ export interface RoundHoleScore {
 	score: number;
 }
 
+export type TrackingMode = 'discs' | 'lies' | 'detail' | 'score';
+export type RoundLayout = 'full' | 'front9' | 'back9';
+
 export interface Round {
 	round_id: number;
 	course_id: number;
 	bag_id: number;
 	played_at: string;
 	total_score: number | null;
+	tracking_mode: TrackingMode;
+	layout: RoundLayout;
 	round_holes: RoundHoleScore[];
 }
 

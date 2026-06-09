@@ -8,8 +8,9 @@
 
 	const roundId = $derived(Number(page.params.roundId));
 
-	// How much to track: disc per throw (GPS) / GPS lies / landing zones
-	// (uDisc-style detailed, no GPS) / pure score entry
+	// How much to track — chosen at round setup, stored on the round:
+	// disc per throw (GPS) / GPS lies / landing zones (detailed, no GPS) /
+	// pure score entry
 	type Tracking = 'discs' | 'lies' | 'detail' | 'score';
 	let tracking = $state<Tracking>('lies');
 
@@ -136,9 +137,13 @@
 		return tee ? { latitude: tee.latitude!, longitude: tee.longitude! } : null;
 	});
 
-	const sortedHoles = $derived(
-		course ? [...course.holes].sort((a, b) => a.hole_number - b.hole_number) : []
-	);
+	const sortedHoles = $derived.by(() => {
+		if (!course) return [];
+		let holes = [...course.holes].sort((a, b) => a.hole_number - b.hole_number);
+		if (round?.layout === 'front9') holes = holes.filter((h) => h.hole_number <= 9);
+		if (round?.layout === 'back9') holes = holes.filter((h) => h.hole_number >= 10);
+		return holes;
+	});
 	const currentHole = $derived<Hole | undefined>(
 		sortedHoles.find((h) => h.hole_id === currentHoleId)
 	);
@@ -157,6 +162,7 @@
 			try {
 				const r = await api.getRound(roundId);
 				round = r;
+				tracking = r.tracking_mode; // chosen at round setup
 				scores = new Map(r.round_holes.map((rh) => [rh.hole_id, rh.score]));
 				const c = await api.getCourse(r.course_id);
 				course = c;
@@ -460,31 +466,17 @@
 		</div>
 	{/if}
 
-	<!-- Caddie mode + tracking level -->
-	<div class="flex gap-2">
-		<div class="flex flex-1 rounded-xl border border-edge bg-card p-1">
-			{#each [['conservative', 'Safe'], ['balanced', 'Bal'], ['aggressive', 'Send']] as [value, label] (value)}
-				<button
-					class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition
-						{mode === value ? 'bg-accent text-surface' : 'text-ink-dim'}"
-					onclick={() => (mode = value as CaddieMode)}
-				>
-					{label}
-				</button>
-			{/each}
-		</div>
-		<div class="flex flex-1 rounded-xl border border-edge bg-card p-1" title="How much to track">
-			{#each [['discs', '🥏'], ['lies', '📍'], ['detail', '📊'], ['score', '#']] as [value, label] (value)}
-				<button
-					class="flex-1 rounded-lg py-1.5 text-[11px] font-semibold whitespace-nowrap transition
-						{tracking === value ? 'bg-sky-500/25 text-sky-300' : 'text-ink-dim'}"
-					onclick={() => (tracking = value as Tracking)}
-					title={{ discs: 'Discs + GPS lies', lies: 'GPS lies', detail: 'Landing zones (detailed)', score: 'Score only' }[value]}
-				>
-					{label}
-				</button>
-			{/each}
-		</div>
+	<!-- Caddie mode (tracking level was chosen at round setup) -->
+	<div class="flex rounded-xl border border-edge bg-card p-1">
+		{#each [['conservative', 'Safe'], ['balanced', 'Balanced'], ['aggressive', 'Send it']] as [value, label] (value)}
+			<button
+				class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition
+					{mode === value ? 'bg-accent text-surface' : 'text-ink-dim'}"
+				onclick={() => (mode = value as CaddieMode)}
+			>
+				{label}
+			</button>
+		{/each}
 	</div>
 
 	{#if error}

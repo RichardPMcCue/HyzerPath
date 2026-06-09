@@ -4,6 +4,12 @@ from typing import Optional
 
 class RoundCreate(BaseModel):
     course_id: int
+    tracking_mode: str = "lies"  # discs | lies | detail | score
+    layout: str = "full"         # full | front9 | back9
+
+class RoundUpdate(BaseModel):
+    tracking_mode: Optional[str] = None
+    layout: Optional[str] = None
 
 class RoundHoleScore(BaseModel):
     score: int
@@ -22,6 +28,8 @@ class RoundResponse(BaseModel):
     bag_id: int
     played_at: datetime
     total_score: Optional[int] = None
+    tracking_mode: str = "lies"
+    layout: str = "full"
     round_holes: list[RoundHoleResponse] = []
 
 class RoundThrowCreate(BaseModel):

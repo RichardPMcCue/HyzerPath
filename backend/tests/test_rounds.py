@@ -223,3 +223,19 @@ def test_delete_round_throw(client):
     response = client.delete(f"/rounds/{rid}/throws/{throw['round_throw_id']}")
     assert response.status_code == 200
     assert client.get(f"/rounds/{rid}/stats").json()["fairway_attempts"] == 0
+
+
+def test_round_setup_options(client):
+    cid, _ = seed_course(client)
+    round_ = client.post("/rounds", json={
+        "course_id": cid, "tracking_mode": "detail", "layout": "front9"
+    }).json()
+    assert round_["tracking_mode"] == "detail"
+    assert round_["layout"] == "front9"
+
+    # Mode is changeable mid-round
+    updated = client.patch(f"/rounds/{round_['round_id']}", json={"tracking_mode": "score"}).json()
+    assert updated["tracking_mode"] == "score"
+
+    # Invalid values rejected
+    assert client.post("/rounds", json={"course_id": cid, "tracking_mode": "yolo"}).status_code == 400

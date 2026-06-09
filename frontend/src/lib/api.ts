@@ -120,8 +120,14 @@ export const api = {
 	},
 
 	// --- rounds ---
-	startRound: (courseId: number) =>
-		request<Round>('/rounds', { method: 'POST', body: JSON.stringify({ course_id: courseId }) }),
+	startRound: (
+		courseId: number,
+		opts: { tracking_mode?: string; layout?: string } = {}
+	) =>
+		request<Round>('/rounds', {
+			method: 'POST',
+			body: JSON.stringify({ course_id: courseId, ...opts })
+		}),
 	getRound: (roundId: number) => request<Round>(`/rounds/${roundId}`),
 	listRounds: () => request<Round[]>('/rounds'),
 	setHoleScore: (roundId: number, holeId: number, score: number) =>
