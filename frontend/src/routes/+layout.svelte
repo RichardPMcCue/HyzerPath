@@ -1,7 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
-	import { goto, replaceState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import BottomNav from '$lib/components/BottomNav.svelte';
@@ -12,16 +12,19 @@
 
 	onMount(() => {
 		// Capture the OAuth redirect: backend sends us back with ?token=...
-		const token = page.url.searchParams.get('token');
+		// Native history API here — SvelteKit's router isn't initialized yet
+		// when the root layout mounts in SPA mode.
+		const params = new URLSearchParams(window.location.search);
+		const token = params.get('token');
 		if (token) {
 			auth.login(token);
-			const url = new URL(page.url.href);
+			const url = new URL(window.location.href);
 			url.searchParams.delete('token');
-			replaceState(url, {});
+			window.history.replaceState(window.history.state, '', url);
 		}
 
-		if (!auth.isLoggedIn && page.url.pathname !== '/login') {
-			goto('/login', { replaceState: true });
+		if (!auth.isLoggedIn && window.location.pathname !== '/login') {
+			goto('/login', { replaceState: true }).catch(() => window.location.replace('/login'));
 		}
 		ready = true;
 	});
