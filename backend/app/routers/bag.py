@@ -4,7 +4,7 @@ from typing import Optional
 import httpx
 
 from app.database import get_db
-from app.models import Disc, User, UserDiscStat
+from app.models import BagDisc, Disc, ThrowMeasurement, User, UserDiscStat
 from app.schemas import DiscCreate, DiscResponse, DiscUpdate, DiscStatUpsert, DiscStatResponse
 from app.utils import map_discit_category
 from app.dependencies import get_current_user
@@ -145,7 +145,15 @@ async def delete_disc(disc_id: int, db: Session = Depends(get_db), current_user:
 
     if disc is None:
         raise HTTPException(status_code=404, detail="Disc not found")
-    
+
+    # Clean up dependents first: stats and bag links go, measured throws keep
+    # their distance but lose the disc reference
+    db.query(UserDiscStat).filter(UserDiscStat.disc_id == disc_id).delete()
+    db.query(BagDisc).filter(BagDisc.disc_id == disc_id).delete()
+    db.query(ThrowMeasurement).filter(ThrowMeasurement.disc_id == disc_id).update({"disc_id": None})
+    from app.models import RoundThrow
+    db.query(RoundThrow).filter(RoundThrow.disc_id == disc_id).update({"disc_id": None})
+
     db.delete(disc)
     db.commit()
     return {"message": "Disc deleted"}

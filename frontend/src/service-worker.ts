@@ -29,6 +29,8 @@ sw.addEventListener('activate', (event) => {
 
 sw.addEventListener('fetch', (event) => {
 	if (event.request.method !== 'GET') return;
+	// Stay out of the way during development — vite serves everything
+	if (import.meta.env.DEV) return;
 
 	const url = new URL(event.request.url);
 
@@ -56,7 +58,7 @@ sw.addEventListener('fetch', (event) => {
 				// SPA fallback for navigations while offline
 				const fallback = await cache.match('/index.html');
 				if (fallback) return fallback;
-				throw new Error('offline and not cached');
+				return Response.error();
 			}
 		})()
 	);

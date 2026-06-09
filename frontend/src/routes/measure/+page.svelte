@@ -40,49 +40,50 @@
 	}
 
 	onMount(() => {
-		(async () => {
-			let center: [number, number] = [-93.5, 41.9]; // fallback until GPS lands
-			let zoom = 4;
-			try {
-				const pos = await getPosition();
-				center = [pos.coords.longitude, pos.coords.latitude];
-				zoom = 18;
-				gpsAccuracy = pos.coords.accuracy * 3.28084;
-			} catch {
-				/* render the map anyway */
-			}
-			if (!mapContainer) return;
-			map = new maplibregl.Map({
-				container: mapContainer,
-				style: {
-					version: 8,
-					sources: {
-						satellite: {
-							type: 'raster',
-							tiles: [
-								'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-							],
-							tileSize: 256,
-							attribution: 'Esri'
-						}
-					},
-					layers: [{ id: 'satellite', type: 'raster', source: 'satellite' }]
+		if (!mapContainer) return;
+		// Render the map immediately — never block on the GPS permission prompt
+		map = new maplibregl.Map({
+			container: mapContainer,
+			style: {
+				version: 8,
+				sources: {
+					satellite: {
+						type: 'raster',
+						tiles: [
+							'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+						],
+						tileSize: 256,
+						attribution: 'Esri'
+					}
 				},
-				center,
-				zoom,
-				attributionControl: false
+				layers: [{ id: 'satellite', type: 'raster', source: 'satellite' }]
+			},
+			center: [-93.5, 41.9],
+			zoom: 4,
+			attributionControl: false
+		});
+		map.on('load', () => {
+			map!.resize(); // container may have settled after construction
+			map!.addSource('lines', { type: 'geojson', data: linesGeoJSON() });
+			map!.addLayer({
+				id: 'throw-lines',
+				type: 'line',
+				source: 'lines',
+				layout: { 'line-cap': 'round' },
+				paint: { 'line-color': '#34d399', 'line-width': 3, 'line-dasharray': [0.5, 1.8] }
 			});
-			map.on('load', () => {
-				map!.addSource('lines', { type: 'geojson', data: linesGeoJSON() });
-				map!.addLayer({
-					id: 'throw-lines',
-					type: 'line',
-					source: 'lines',
-					layout: { 'line-cap': 'round' },
-					paint: { 'line-color': '#34d399', 'line-width': 3, 'line-dasharray': [0.5, 1.8] }
-				});
+		});
+
+		// Fly to the player as soon as GPS resolves
+		getPosition()
+			.then((pos) => {
+				gpsAccuracy = pos.coords.accuracy * 3.28084;
+				map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 18 });
+			})
+			.catch(() => {
+				/* stay at the fallback view */
 			});
-		})();
+
 		return () => map?.remove();
 	});
 
