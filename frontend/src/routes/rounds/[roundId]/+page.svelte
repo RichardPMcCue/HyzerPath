@@ -53,8 +53,13 @@
 			detailThrows = [...detailThrows, { id: saved.round_throw_id, zone, drop, puttFt }];
 			// Score = throws + one penalty per OB
 			await saveScore(currentHole.hole_id, detailThrows.length + obCount);
-			zoneSheet = null;
-			if (zone === 'basket') advanceHole();
+			if (zone === 'basket') {
+				zoneSheet = null;
+				advanceHole();
+			} else {
+				// Flow straight into the next throw; ✕ pauses, Record Throw resumes
+				zoneSheet = { step: 'landing' };
+			}
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
