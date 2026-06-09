@@ -1,6 +1,7 @@
 import os
 import subprocess
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
 from dotenv import load_dotenv
 from app.routers import bag, auth, course
@@ -12,6 +13,20 @@ app = FastAPI(
     description="Intelligent disc golf caddie",
     version="0.1.0",
     swagger_ui_parameters={"persistAuthorization": True},
+)
+
+# The SvelteKit frontend runs on a different origin
+cors_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", "http://localhost:5173,http://localhost:4173").split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 security = HTTPBearer()
@@ -46,9 +61,17 @@ async def deploy(x_deploy_token: str = Header(...)):
     secret = os.environ.get("DEPLOY_SECRET")
     if secret != x_deploy_token:
         raise HTTPException(status_code=401, detail="Deploy Token does not match")
+
+    app_dir = os.environ.get("APP_DIR", "/home/hyzerpath/hyzerpath")
     subprocess.run(
-        ["git", "-C", "/home/hyzerpath/hyzerpath", "pull", "origin", "main"],
+        ["git", "-C", app_dir, "pull", "origin", "main"],
         check=True
     )
-    subprocess.Popen(["sudo", "systemctl", "restart", "hyzerpath"])
-    return {"message": "Deploy successful"}
+    # Detached (new session) so the systemctl restart inside the script
+    # doesn't kill the deploy halfway through.
+    subprocess.Popen(
+        ["bash", f"{app_dir}/infra/deploy.sh"],
+        env={**os.environ, "APP_DIR": app_dir},
+        start_new_session=True,
+    )
+    return {"message": "Deploy started"}
