@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+	<rect width="512" height="512" rx="112" fill="#0c1210"/>
+	<!-- hyzer flight path -->
+	<path d="M96 416 C 160 256, 224 160, 336 128 C 384 114, 416 128, 416 128"
+		fill="none" stroke="#34d399" stroke-width="36" stroke-linecap="round"/>
+	<!-- disc -->
+	<ellipse cx="396" cy="132" rx="56" ry="24" fill="#34d399"/>
+	<ellipse cx="396" cy="126" rx="56" ry="22" fill="#6ee7b7"/>
+	<!-- basket pole -->
+	<rect x="88" y="380" width="16" height="56" rx="8" fill="#9db3a8"/>
+</svg>

@@ -1,0 +1,25 @@
+@import 'tailwindcss';
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+@theme {
+	--color-surface: #0c1210;
+	--color-card: #161f1b;
+	--color-card-raised: #1e2a24;
+	--color-edge: #2a3832;
+	--color-accent: #34d399;
+	--color-accent-dim: #10b981;
+	--color-ink: #e8f0ec;
+	--color-ink-dim: #9db3a8;
+	--font-display: 'Inter', system-ui, sans-serif;
+}
+
+html {
+	background-color: var(--color-surface);
+	color: var(--color-ink);
+	font-family: var(--font-display);
+	-webkit-tap-highlight-color: transparent;
+}
+
+body {
+	overscroll-behavior-y: none;
+}
