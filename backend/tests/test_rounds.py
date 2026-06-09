@@ -160,3 +160,66 @@ def test_delete_disc_with_stats_and_throws(client):
     response = client.delete(f"/bag/discs/{disc_id}")
     assert response.status_code == 200
     assert client.get("/bag/discs").json() == []
+
+
+def test_zone_based_throws_and_stats(client):
+    """uDisc-style detailed scoring with no GPS: zones drive the stats."""
+    cid, holes = seed_course(client)
+    hid = holes[0]
+    rid = client.post("/rounds", json={"course_id": cid}).json()["round_id"]
+
+    # Drive lands in C1
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 1, "landing_zone": "c1"
+    })
+    # Missed putt from C1, stays in C1
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 2, "landing_zone": "c1", "putt_distance_ft": 27
+    })
+    # Holed putt from C1
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 3, "landing_zone": "basket", "is_holed": True, "putt_distance_ft": 6
+    })
+
+    stats = client.get(f"/rounds/{rid}/stats").json()
+    assert stats["fairway_attempts"] == 1
+    assert stats["fairway_hits"] == 1       # C1 counts as hitting the fairway
+    assert stats["c1_putts_attempted"] == 2  # throws 2 and 3 start from C1
+    assert stats["c1_putts_made"] == 1
+
+
+def test_ob_drop_zone_flow(client):
+    """OB drive, drop in fairway, C2 approach, holed C2 putt."""
+    cid, holes = seed_course(client)
+    hid = holes[0]
+    rid = client.post("/rounds", json={"course_id": cid}).json()["round_id"]
+
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 1, "landing_zone": "ob", "drop_zone": "fairway"
+    })
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 2, "landing_zone": "c2"
+    })
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 3, "landing_zone": "basket", "is_holed": True
+    })
+
+    stats = client.get(f"/rounds/{rid}/stats").json()
+    assert stats["fairway_attempts"] == 1
+    assert stats["fairway_hits"] == 0       # OB drive missed
+    assert stats["c2_putts_attempted"] == 1  # throw 3 starts from C2
+    assert stats["c2_putts_made"] == 1
+    assert stats["c1_putts_attempted"] == 0
+
+
+def test_delete_round_throw(client):
+    cid, holes = seed_course(client)
+    hid = holes[0]
+    rid = client.post("/rounds", json={"course_id": cid}).json()["round_id"]
+    throw = client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 1, "landing_zone": "ob"
+    }).json()
+
+    response = client.delete(f"/rounds/{rid}/throws/{throw['round_throw_id']}")
+    assert response.status_code == 200
+    assert client.get(f"/rounds/{rid}/stats").json()["fairway_attempts"] == 0

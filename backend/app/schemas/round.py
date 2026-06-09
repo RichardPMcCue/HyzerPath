@@ -31,6 +31,9 @@ class RoundThrowCreate(BaseModel):
     start_longitude: Optional[float] = None
     end_latitude: Optional[float] = None
     end_longitude: Optional[float] = None
+    landing_zone: Optional[str] = None  # basket | c1 | c2 | fairway | off_fairway | ob
+    drop_zone: Optional[str] = None     # after OB: c1 | c2 | fairway | off_fairway | tee_pad
+    putt_distance_ft: Optional[float] = None  # band midpoint from the putt-distance picker
     is_holed: bool = False
 
 class RoundThrowResponse(BaseModel):
@@ -42,6 +45,8 @@ class RoundThrowResponse(BaseModel):
     throw_number: int
     disc_id: Optional[int] = None
     distance_ft: Optional[float] = None
+    landing_zone: Optional[str] = None
+    drop_zone: Optional[str] = None
     is_holed: bool
 
 class RoundStatsResponse(BaseModel):

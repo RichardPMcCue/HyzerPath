@@ -142,13 +142,18 @@ export const api = {
 			start_longitude?: number | null;
 			end_latitude?: number | null;
 			end_longitude?: number | null;
+			landing_zone?: string | null;
+			drop_zone?: string | null;
+			putt_distance_ft?: number | null;
 			is_holed?: boolean;
 		}
 	) =>
-		request(`/rounds/${roundId}/holes/${holeId}/throws`, {
+		request<{ round_throw_id: number }>(`/rounds/${roundId}/holes/${holeId}/throws`, {
 			method: 'POST',
 			body: JSON.stringify(throwIn)
 		}),
+	deleteRoundThrow: (roundId: number, roundThrowId: number) =>
+		request(`/rounds/${roundId}/throws/${roundThrowId}`, { method: 'DELETE' }),
 	getRoundStats: (roundId: number) =>
 		request<RoundStats>(`/rounds/${roundId}/stats`)
 };

@@ -141,12 +141,14 @@ async def record_round_throw(
             throw_in.start_latitude, throw_in.start_longitude,
             throw_in.end_latitude, throw_in.end_longitude,
         ), 1)
+    elif throw_in.putt_distance_ft is not None:
+        distance = throw_in.putt_distance_ft  # zone mode: band midpoint estimate
 
     throw = RoundThrow(
         round_id=round_id,
         hole_id=hole_id,
         distance_ft=distance,
-        **throw_in.model_dump(),
+        **throw_in.model_dump(exclude={"putt_distance_ft"}),
     )
     db.add(throw)
     db.flush()
@@ -160,10 +162,35 @@ async def record_round_throw(
     return throw
 
 
+@router.delete("/{round_id}/throws/{round_throw_id}")
+async def delete_round_throw(
+    round_id: int,
+    round_throw_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Undo a misrecorded throw."""
+    _get_round(round_id, db, current_user)
+    throw = db.query(RoundThrow).filter(
+        RoundThrow.round_throw_id == round_throw_id,
+        RoundThrow.round_id == round_id
+    ).first()
+    if throw is None:
+        raise HTTPException(status_code=404, detail="Throw not found")
+    disc_id = throw.disc_id
+    db.delete(throw)
+    db.flush()
+    if disc_id is not None:
+        from app.routers.throws import _sync_disc_stat
+        _sync_disc_stat(disc_id, db, current_user)
+    db.commit()
+    return {"message": "Throw deleted"}
+
+
 @router.get("/{round_id}/stats", response_model=RoundStatsResponse)
 async def round_stats(round_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Computes C1/C2 putting, fairway hits, and parked shots from the
-    round's recorded throws and hole geometry."""
+    """Computes C1/C2 putting, fairway hits, and parked shots. Works from GPS
+    coordinates when present, landing zones when not."""
     round_ = _get_round(round_id, db, current_user)
     throws = db.query(RoundThrow).filter(RoundThrow.round_id == round_id).all()
 
@@ -172,6 +199,7 @@ async def round_stats(round_id: int, db: Session = Depends(get_db), current_user
         by_hole.setdefault(t.hole_id, []).append(t)
 
     stats = dict(c1_made=0, c1_att=0, c2_made=0, c2_att=0, fw_hits=0, fw_att=0, parked=0)
+    FAIRWAY_ZONES = ("fairway", "c1", "c2", "basket")
 
     for hole_id, hole_throws in by_hole.items():
         nodes = db.query(HoleNode).filter(HoleNode.hole_id == hole_id).all()
@@ -181,28 +209,47 @@ async def round_stats(round_id: int, db: Session = Depends(get_db), current_user
         ).all()
         fairway_ring = compute_fairway_polygon([n for n in nodes if n.is_fairway], edges)
 
-        for t in hole_throws:
+        prev_landing_zone = None  # where the previous throw left the player
+        for t in sorted(hole_throws, key=lambda x: x.throw_number):
+            # Start circle: GPS distance to basket, or the previous landing zone
+            start_circle = None
             if basket is not None and t.start_latitude is not None:
                 from_basket = haversine_feet(t.start_latitude, t.start_longitude, basket.latitude, basket.longitude)
                 if from_basket <= C1_FT:
-                    stats["c1_att"] += 1
-                    if t.is_holed:
-                        stats["c1_made"] += 1
+                    start_circle = "c1"
                 elif from_basket <= C2_FT:
-                    stats["c2_att"] += 1
-                    if t.is_holed:
-                        stats["c2_made"] += 1
+                    start_circle = "c2"
+            elif prev_landing_zone in ("c1", "c2"):
+                start_circle = prev_landing_zone
 
+            if start_circle == "c1":
+                stats["c1_att"] += 1
+                if t.is_holed:
+                    stats["c1_made"] += 1
+            elif start_circle == "c2":
+                stats["c2_att"] += 1
+                if t.is_holed:
+                    stats["c2_made"] += 1
+
+            # Parked: landing within 10ft (GPS only)
             if basket is not None and t.end_latitude is not None and not t.is_holed:
                 to_basket = haversine_feet(t.end_latitude, t.end_longitude, basket.latitude, basket.longitude)
                 if to_basket <= PARKED_FT:
                     stats["parked"] += 1
 
-            # Fairway hit: the drive landed inside the corridor
-            if t.throw_number == 1 and len(fairway_ring) >= 3 and t.end_latitude is not None and not t.is_holed:
-                stats["fw_att"] += 1
-                if point_in_polygon(t.end_latitude, t.end_longitude, fairway_ring):
-                    stats["fw_hits"] += 1
+            # Fairway hit: the drive landed in the corridor (GPS) or a fairway zone
+            if t.throw_number == 1 and not t.is_holed:
+                if t.end_latitude is not None and len(fairway_ring) >= 3:
+                    stats["fw_att"] += 1
+                    if point_in_polygon(t.end_latitude, t.end_longitude, fairway_ring):
+                        stats["fw_hits"] += 1
+                elif t.landing_zone is not None:
+                    stats["fw_att"] += 1
+                    if t.landing_zone in FAIRWAY_ZONES:
+                        stats["fw_hits"] += 1
+
+            # Next throw starts from the drop zone after an OB
+            prev_landing_zone = t.drop_zone if t.landing_zone == "ob" else t.landing_zone
 
     return RoundStatsResponse(
         holes_with_throws=len(by_hole),

@@ -8,9 +8,94 @@
 
 	const roundId = $derived(Number(page.params.roundId));
 
-	// How much to track: disc per throw / GPS lies only / pure score entry
-	type Tracking = 'discs' | 'lies' | 'score';
+	// How much to track: disc per throw (GPS) / GPS lies / landing zones
+	// (uDisc-style detailed, no GPS) / pure score entry
+	type Tracking = 'discs' | 'lies' | 'detail' | 'score';
 	let tracking = $state<Tracking>('lies');
+
+	// --- Detail (zone) mode state ---
+	type Zone = 'basket' | 'c1' | 'c2' | 'fairway' | 'off_fairway' | 'ob';
+	type DropZone = 'c1' | 'c2' | 'fairway' | 'off_fairway' | 'tee_pad';
+	let detailThrows = $state<{ id: number; zone: Zone; drop?: DropZone; puttFt?: number }[]>([]);
+	let zoneSheet = $state<null | { step: 'landing' } | { step: 'drop' } | { step: 'putt' }>(null);
+	let savingZone = $state(false);
+
+	const startZone = $derived.by((): string => {
+		const last = detailThrows[detailThrows.length - 1];
+		if (!last) return 'tee';
+		return last.zone === 'ob' ? (last.drop ?? 'fairway') : last.zone;
+	});
+	const obCount = $derived(detailThrows.filter((t) => t.zone === 'ob').length);
+
+	const ZONE_LABELS: Record<string, string> = {
+		tee: 'Tee',
+		basket: '🧺',
+		c1: 'C1',
+		c2: 'C2',
+		fairway: 'Fairway',
+		off_fairway: 'Off fairway',
+		ob: 'OB',
+		tee_pad: 'Tee pad'
+	};
+
+	async function commitZoneThrow(zone: Zone, drop?: DropZone, puttFt?: number) {
+		if (!currentHole) return;
+		savingZone = true;
+		try {
+			const saved = await api.recordRoundThrow(roundId, currentHole.hole_id, {
+				throw_number: detailThrows.length + 1,
+				landing_zone: zone,
+				drop_zone: drop ?? null,
+				putt_distance_ft: puttFt ?? null,
+				is_holed: zone === 'basket'
+			});
+			detailThrows = [...detailThrows, { id: saved.round_throw_id, zone, drop, puttFt }];
+			// Score = throws + one penalty per OB
+			await saveScore(currentHole.hole_id, detailThrows.length + obCount);
+			zoneSheet = null;
+			if (zone === 'basket') advanceHole();
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			savingZone = false;
+		}
+	}
+
+	function pickLandingZone(zone: Zone) {
+		if (zone === 'ob') {
+			zoneSheet = { step: 'drop' };
+		} else if (zone === 'basket' && (startZone === 'c1' || startZone === 'c2')) {
+			zoneSheet = { step: 'putt' };
+		} else {
+			commitZoneThrow(zone);
+		}
+	}
+
+	async function undoZoneThrow() {
+		const last = detailThrows[detailThrows.length - 1];
+		if (!last || !currentHole) return;
+		try {
+			await api.deleteRoundThrow(roundId, last.id);
+			detailThrows = detailThrows.slice(0, -1);
+			await saveScore(currentHole.hole_id, detailThrows.length + obCount);
+		} catch (e) {
+			error = (e as Error).message;
+		}
+	}
+
+	const puttBands = $derived(
+		startZone === 'c2'
+			? [
+					{ label: '33 – 44 ft', mid: 38 },
+					{ label: '44 – 55 ft', mid: 50 },
+					{ label: '55 – 66 ft', mid: 61 }
+				]
+			: [
+					{ label: '0 – 11 ft', mid: 6 },
+					{ label: '11 – 22 ft', mid: 16 },
+					{ label: '22 – 33 ft', mid: 28 }
+				]
+	);
 
 	let round = $state<Round | null>(null);
 	let course = $state<Course | null>(null);
@@ -107,6 +192,8 @@
 		lie = null; // new hole, new tee shot
 		prevPoint = null;
 		pendingThrow = null;
+		detailThrows = [];
+		zoneSheet = null;
 	}
 
 	// Persists a throw to round_throws: powers C1/C2 putting, fairway hits,
@@ -151,6 +238,8 @@
 		if (!currentHole) return;
 		lie = null;
 		prevPoint = null;
+		detailThrows = [];
+		zoneSheet = null;
 		const idx = sortedHoles.findIndex((h) => h.hole_id === currentHole!.hole_id);
 		if (idx >= 0 && idx < sortedHoles.length - 1) {
 			currentHoleId = sortedHoles[idx + 1].hole_id;
@@ -316,8 +405,39 @@
 		/>
 	{/if}
 
-	<!-- Throw actions (hidden in score-only mode) -->
-	{#if tracking !== 'score'}
+	<!-- Detail mode: record throws by landing zone, uDisc-style -->
+	{#if tracking === 'detail'}
+		<div class="flex items-center gap-2">
+			<button
+				class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-accent py-3.5 font-bold text-surface transition active:scale-95"
+				onclick={() => (zoneSheet = { step: 'landing' })}
+			>
+				＋ Record throw
+			</button>
+			{#if detailThrows.length > 0}
+				<button
+					class="rounded-xl border border-edge bg-card px-4 py-3.5 text-xs font-semibold text-ink-dim transition active:scale-95"
+					onclick={undoZoneThrow}
+				>
+					Undo
+				</button>
+			{/if}
+		</div>
+		{#if detailThrows.length > 0}
+			<div class="flex flex-wrap items-center gap-1 px-1 text-xs text-ink-dim">
+				<span class="rounded bg-card-raised px-1.5 py-0.5 font-semibold">Tee</span>
+				{#each detailThrows as t, i (t.id)}
+					<span>→</span>
+					<span class="rounded bg-card-raised px-1.5 py-0.5 font-semibold {t.zone === 'ob' ? 'text-red-400' : ''}">
+						{ZONE_LABELS[t.zone]}{t.puttFt ? ` ${t.puttFt} ft` : ''}{t.zone === 'ob' && t.drop ? ` → ${ZONE_LABELS[t.drop]}` : ''}
+					</span>
+				{/each}
+			</div>
+		{/if}
+	{/if}
+
+	<!-- GPS throw actions (lies / discs modes) -->
+	{#if tracking === 'lies' || tracking === 'discs'}
 		<div class="flex items-center gap-2">
 			<button
 				class="flex flex-1 items-center justify-center gap-2 rounded-xl py-3.5 font-bold transition active:scale-95 disabled:opacity-50
@@ -354,11 +474,12 @@
 			{/each}
 		</div>
 		<div class="flex flex-1 rounded-xl border border-edge bg-card p-1" title="How much to track">
-			{#each [['discs', '🥏 Discs'], ['lies', '📍 Lies'], ['score', '# Score']] as [value, label] (value)}
+			{#each [['discs', '🥏'], ['lies', '📍'], ['detail', '📊'], ['score', '#']] as [value, label] (value)}
 				<button
 					class="flex-1 rounded-lg py-1.5 text-[11px] font-semibold whitespace-nowrap transition
 						{tracking === value ? 'bg-sky-500/25 text-sky-300' : 'text-ink-dim'}"
 					onclick={() => (tracking = value as Tracking)}
+					title={{ discs: 'Discs + GPS lies', lies: 'GPS lies', detail: 'Landing zones (detailed)', score: 'Score only' }[value]}
 				>
 					{label}
 				</button>
@@ -412,6 +533,73 @@
 		</div>
 	{/if}
 </main>
+
+<!-- Zone sheets (detail mode) -->
+{#if zoneSheet}
+	<div class="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md rounded-t-2xl border-t border-edge bg-card/95 p-4 pb-24 backdrop-blur">
+		{#if zoneSheet.step === 'landing'}
+			<div class="flex items-center justify-between">
+				<div>
+					<p class="text-xs text-ink-dim">From {ZONE_LABELS[startZone] ?? startZone}</p>
+					<p class="text-base font-bold">Where did throw {detailThrows.length + 1} land?</p>
+				</div>
+				<button class="p-1 text-ink-dim" onclick={() => (zoneSheet = null)} aria-label="Close">✕</button>
+			</div>
+			<div class="mt-3 space-y-1.5">
+				{#each [['basket', '🧺 Basket'], ['c1', '◎ Circle 1 (0–33 ft)'], ['c2', '◎ Circle 2 (33–66 ft)'], ['fairway', '⬆ Fairway'], ['off_fairway', '✕ Off the fairway'], ['ob', '⚠ OB']] as [zone, label] (zone)}
+					<button
+						class="flex w-full items-center justify-between rounded-xl border border-edge bg-card-raised px-4 py-3 text-left text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50
+							{zone === 'ob' ? 'text-red-300' : ''}"
+						onclick={() => pickLandingZone(zone as Zone)}
+						disabled={savingZone}
+					>
+						{label}
+						<span class="text-ink-dim">›</span>
+					</button>
+				{/each}
+			</div>
+		{:else if zoneSheet.step === 'drop'}
+			<div class="flex items-center justify-between">
+				<div>
+					<p class="text-xs text-red-300">OB — penalty stroke added</p>
+					<p class="text-base font-bold">Select penalty / drop location</p>
+				</div>
+				<button class="p-1 text-ink-dim" onclick={() => (zoneSheet = null)} aria-label="Close">✕</button>
+			</div>
+			<div class="mt-3 space-y-1.5">
+				{#each [['c1', '◎ Circle 1 (0–33 ft)'], ['c2', '◎ Circle 2 (33–66 ft)'], ['fairway', '⬆ Fairway'], ['off_fairway', '✕ Off the fairway'], ['tee_pad', '▭ Tee pad']] as [drop, label] (drop)}
+					<button
+						class="flex w-full items-center justify-between rounded-xl border border-edge bg-card-raised px-4 py-3 text-left text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50"
+						onclick={() => commitZoneThrow('ob', drop as DropZone)}
+						disabled={savingZone}
+					>
+						{label}
+						<span class="text-ink-dim">›</span>
+					</button>
+				{/each}
+			</div>
+		{:else if zoneSheet.step === 'putt'}
+			<div class="flex items-center justify-between">
+				<div>
+					<p class="text-xs text-ink-dim">Holed from {ZONE_LABELS[startZone]}</p>
+					<p class="text-base font-bold">Select putt distance</p>
+				</div>
+				<button class="p-1 text-ink-dim" onclick={() => (zoneSheet = null)} aria-label="Close">✕</button>
+			</div>
+			<div class="mt-3 grid grid-cols-3 gap-2">
+				{#each puttBands as band (band.mid)}
+					<button
+						class="rounded-xl border border-edge bg-card-raised py-8 text-sm font-bold text-sky-300 transition active:scale-95 disabled:opacity-50"
+						onclick={() => commitZoneThrow('basket', undefined, band.mid)}
+						disabled={savingZone}
+					>
+						{band.label}
+					</button>
+				{/each}
+			</div>
+		{/if}
+	</div>
+{/if}
 
 <!-- Disc picker sheet: which disc was that throw? -->
 {#if pendingThrow}
