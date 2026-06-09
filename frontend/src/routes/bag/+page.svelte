@@ -2,7 +2,9 @@
 	import { api } from '$lib/api';
 	import type { Disc, DiscItResult, DiscStat } from '$lib/types';
 	import FlightNumbers from '$lib/components/FlightNumbers.svelte';
+	import BagMatrix from '$lib/components/BagMatrix.svelte';
 
+	let view = $state<'list' | 'matrix'>('list');
 	let discs = $state<Disc[] | null>(null);
 	let stats = $state<Map<number, DiscStat>>(new Map());
 	let error = $state<string | null>(null);
@@ -153,6 +155,18 @@
 			oninput={onQueryInput}
 			class="mt-3 w-full rounded-xl border border-edge bg-card px-4 py-2.5 text-sm placeholder:text-ink-dim focus:border-accent focus:outline-none"
 		/>
+	{:else}
+		<div class="mt-3 flex rounded-xl border border-edge bg-card p-1">
+			{#each [['list', 'List'], ['matrix', 'Matrix']] as [value, label] (value)}
+				<button
+					class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition
+						{view === value ? 'bg-accent text-surface' : 'text-ink-dim'}"
+					onclick={() => (view = value as 'list' | 'matrix')}
+				>
+					{label}
+				</button>
+			{/each}
+		</div>
 	{/if}
 </header>
 
@@ -193,6 +207,10 @@
 			<p class="text-4xl">🥏</p>
 			<p class="mt-3 font-semibold">Your bag is empty</p>
 			<p class="mt-1 text-sm text-ink-dim">Add discs so the caddie knows what you throw.</p>
+		</div>
+	{:else if view === 'matrix'}
+		<div class="pt-2">
+			<BagMatrix {discs} />
 		</div>
 	{:else}
 		{#each grouped as group (group.type)}
