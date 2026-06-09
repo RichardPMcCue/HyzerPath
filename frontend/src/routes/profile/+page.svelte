@@ -67,6 +67,16 @@
 		return 'bg-red-500 text-surface';
 	}
 
+	async function removeRound(roundId: number) {
+		if (!confirm('Delete this round? This cannot be undone.')) return;
+		try {
+			await api.deleteRound(roundId);
+			rounds = rounds.filter((r) => r.round_id !== roundId);
+		} catch {
+			/* keep the card on failure */
+		}
+	}
+
 	function logout() {
 		auth.logout();
 		goto('/login');
@@ -111,21 +121,32 @@
 							})}
 						</p>
 					</div>
-					{#if round.total_score !== null}
-						<div class="text-right">
-							<p class="text-xl font-bold {rel > 0 ? 'text-amber-300' : 'text-accent'}">
-								{relLabel(rel)}
-							</p>
-							<p class="text-xs text-ink-dim">{round.total_score} throws</p>
-						</div>
-					{:else}
-						<a
-							href="/rounds/{round.round_id}"
-							class="rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-surface"
+					<div class="flex items-start gap-2">
+						{#if round.total_score !== null}
+							<div class="text-right">
+								<p class="text-xl font-bold {rel > 0 ? 'text-amber-300' : 'text-accent'}">
+									{relLabel(rel)}
+								</p>
+								<p class="text-xs text-ink-dim">{round.total_score} throws</p>
+							</div>
+						{:else}
+							<a
+								href="/rounds/{round.round_id}"
+								class="rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-surface"
+							>
+								Resume
+							</a>
+						{/if}
+						<button
+							class="p-1 text-ink-dim transition hover:text-red-400"
+							onclick={() => removeRound(round.round_id)}
+							aria-label="Delete round"
 						>
-							Resume
-						</a>
-					{/if}
+							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+							</svg>
+						</button>
+					</div>
 				</div>
 				{#if holes.length > 0}
 					<div class="mt-3 flex flex-wrap gap-1">

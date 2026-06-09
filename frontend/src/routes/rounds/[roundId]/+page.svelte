@@ -2,11 +2,15 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
-	import type { CaddieMode, Course, Hole, HolePath, Round } from '$lib/types';
+	import type { CaddieMode, Course, Disc, Hole, HolePath, Round } from '$lib/types';
 	import HoleMap from '$lib/components/HoleMap.svelte';
 	import SegmentCard from '$lib/components/SegmentCard.svelte';
 
 	const roundId = $derived(Number(page.params.roundId));
+
+	// How much to track: disc per throw / GPS lies only / pure score entry
+	type Tracking = 'discs' | 'lies' | 'score';
+	let tracking = $state<Tracking>('lies');
 
 	let round = $state<Round | null>(null);
 	let course = $state<Course | null>(null);
@@ -20,6 +24,30 @@
 	let lie = $state<{ latitude: number; longitude: number } | null>(null);
 	let markingLie = $state(false);
 	let scores = $state<Map<number, number>>(new Map());
+
+	// Disc-tracking state: previous position (tee or last lie) and the throw
+	// awaiting a disc choice
+	let discs = $state<Disc[]>([]);
+	let prevPoint = $state<{ latitude: number; longitude: number } | null>(null);
+	let pendingThrow = $state<{
+		end: { latitude: number; longitude: number };
+		holeOut: boolean;
+	} | null>(null);
+	let savingThrow = $state(false);
+
+	$effect(() => {
+		api
+			.getDiscs()
+			.then((d) => (discs = d))
+			.catch(() => {});
+	});
+
+	const teeCoords = $derived.by(() => {
+		const tee = path?.nodes.find(
+			(n) => n.node_type === 'tee' && n.hole_node_id !== 0 && n.latitude !== null
+		);
+		return tee ? { latitude: tee.latitude!, longitude: tee.longitude! } : null;
+	});
 
 	const sortedHoles = $derived(
 		course ? [...course.holes].sort((a, b) => a.hole_number - b.hole_number) : []
@@ -75,6 +103,52 @@
 		if (holeId === currentHoleId) return;
 		currentHoleId = holeId;
 		lie = null; // new hole, new tee shot
+		prevPoint = null;
+		pendingThrow = null;
+	}
+
+	// Records the completed throw (prev position -> end) as a one-throw
+	// measuring session so it feeds UserDiscStat, exactly like the Measure tab.
+	async function recordThrowSegment(discId: number | null, end: { latitude: number; longitude: number }) {
+		const start = prevPoint ?? teeCoords;
+		if (!start || discId === null) return;
+		try {
+			const s = await api.createThrowSession({
+				start_latitude: start.latitude,
+				start_longitude: start.longitude,
+				label: `Round ${roundId}`
+			});
+			await api.recordThrow(s.session_id, {
+				end_latitude: end.latitude,
+				end_longitude: end.longitude,
+				disc_id: discId
+			});
+		} catch {
+			/* stat logging is best-effort; the stroke already counted */
+		}
+	}
+
+	async function resolvePendingThrow(discId: number | null) {
+		if (!pendingThrow) return;
+		savingThrow = true;
+		const { end, holeOut: wasHoleOut } = pendingThrow;
+		try {
+			await recordThrowSegment(discId, end);
+		} finally {
+			savingThrow = false;
+			pendingThrow = null;
+			if (wasHoleOut) advanceHole();
+		}
+	}
+
+	function advanceHole() {
+		if (!currentHole) return;
+		lie = null;
+		prevPoint = null;
+		const idx = sortedHoles.findIndex((h) => h.hole_id === currentHole!.hole_id);
+		if (idx >= 0 && idx < sortedHoles.length - 1) {
+			currentHoleId = sortedHoles[idx + 1].hole_id;
+		}
 	}
 
 	async function saveScore(holeId: number, value: number) {
@@ -98,8 +172,13 @@
 					maximumAge: 0
 				});
 			});
-			lie = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+			const point = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
 			await saveScore(currentHole.hole_id, strokes + 1);
+			if (tracking === 'discs') {
+				pendingThrow = { end: point, holeOut: false }; // ask which disc
+			}
+			lie = point;
+			prevPoint = point;
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -111,18 +190,35 @@
 	async function holeOut() {
 		if (!currentHole) return;
 		await saveScore(currentHole.hole_id, strokes + 1);
-		lie = null;
-		const idx = sortedHoles.findIndex((h) => h.hole_id === currentHole!.hole_id);
-		if (idx >= 0 && idx < sortedHoles.length - 1) {
-			currentHoleId = sortedHoles[idx + 1].hole_id;
+		const basket = path?.nodes.find((n) => n.node_type === 'basket' && n.latitude !== null);
+		if (tracking === 'discs' && basket) {
+			// Ask for the disc before moving on; advance happens after the sheet
+			pendingThrow = {
+				end: { latitude: basket.latitude!, longitude: basket.longitude! },
+				holeOut: true
+			};
+			return;
 		}
+		advanceHole();
 	}
 
-	// Manual correction: penalty strokes (+) or deleting a misrecorded throw (−)
+	// Manual correction: penalty strokes (+) or deleting a misrecorded throw (−).
+	// In score-only mode the stepper starts from par like a classic scorecard.
 	async function bumpScore(delta: number) {
 		if (!currentHole) return;
-		const next = Math.max(0, strokes + delta);
+		const base = tracking === 'score' ? (scores.get(currentHole.hole_id) ?? currentHole.par) : strokes;
+		const next = Math.max(tracking === 'score' ? 1 : 0, base + delta);
 		await saveScore(currentHole.hole_id, next);
+	}
+
+	async function abandonRound() {
+		if (!confirm('Abandon this round? Scores will be deleted.')) return;
+		try {
+			await api.deleteRound(roundId);
+			goto('/profile');
+		} catch (e) {
+			error = (e as Error).message;
+		}
 	}
 
 	async function finishRound() {
@@ -154,9 +250,14 @@
 			<p class="text-2xl font-bold {totalRelative > 0 ? 'text-amber-300' : 'text-accent'}">
 				{totalRelative === 0 ? 'E' : totalRelative > 0 ? `+${totalRelative}` : totalRelative}
 			</p>
-			<button class="text-xs font-medium text-ink-dim underline" onclick={finishRound} disabled={finishing}>
-				{finishing ? 'Saving…' : 'Finish round'}
-			</button>
+			<div class="flex gap-3">
+				<button class="text-xs font-medium text-red-400/80 underline" onclick={abandonRound}>
+					Abandon
+				</button>
+				<button class="text-xs font-medium text-ink-dim underline" onclick={finishRound} disabled={finishing}>
+					{finishing ? 'Saving…' : 'Finish round'}
+				</button>
+			</div>
 		</div>
 	</div>
 
@@ -204,39 +305,54 @@
 		/>
 	{/if}
 
-	<!-- Throw actions -->
-	<div class="flex items-center gap-2">
-		<button
-			class="flex flex-1 items-center justify-center gap-2 rounded-xl py-3.5 font-bold transition active:scale-95 disabled:opacity-50
-				{lie ? 'border border-sky-500/40 bg-sky-500/20 text-sky-300' : 'bg-accent text-surface'}"
-			onclick={markLie}
-			disabled={markingLie}
-		>
-			<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-				<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-			</svg>
-			{markingLie ? 'Locating…' : 'Mark my lie'}
-		</button>
-		<button
-			class="flex flex-1 items-center justify-center gap-2 rounded-xl border border-edge bg-card py-3.5 font-bold text-ink transition active:scale-95"
-			onclick={holeOut}
-		>
-			🧺 In the basket
-		</button>
-	</div>
-
-	<!-- Mode -->
-	<div class="flex rounded-xl border border-edge bg-card p-1">
-		{#each [['conservative', 'Safe'], ['balanced', 'Balanced'], ['aggressive', 'Send it']] as [value, label] (value)}
+	<!-- Throw actions (hidden in score-only mode) -->
+	{#if tracking !== 'score'}
+		<div class="flex items-center gap-2">
 			<button
-				class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition
-					{mode === value ? 'bg-accent text-surface' : 'text-ink-dim'}"
-				onclick={() => (mode = value as CaddieMode)}
+				class="flex flex-1 items-center justify-center gap-2 rounded-xl py-3.5 font-bold transition active:scale-95 disabled:opacity-50
+					{lie ? 'border border-sky-500/40 bg-sky-500/20 text-sky-300' : 'bg-accent text-surface'}"
+				onclick={markLie}
+				disabled={markingLie}
 			>
-				{label}
+				<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+					<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+				</svg>
+				{markingLie ? 'Locating…' : 'Mark my lie'}
 			</button>
-		{/each}
+			<button
+				class="flex flex-1 items-center justify-center gap-2 rounded-xl border border-edge bg-card py-3.5 font-bold text-ink transition active:scale-95"
+				onclick={holeOut}
+			>
+				🧺 In the basket
+			</button>
+		</div>
+	{/if}
+
+	<!-- Caddie mode + tracking level -->
+	<div class="flex gap-2">
+		<div class="flex flex-1 rounded-xl border border-edge bg-card p-1">
+			{#each [['conservative', 'Safe'], ['balanced', 'Bal'], ['aggressive', 'Send']] as [value, label] (value)}
+				<button
+					class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition
+						{mode === value ? 'bg-accent text-surface' : 'text-ink-dim'}"
+					onclick={() => (mode = value as CaddieMode)}
+				>
+					{label}
+				</button>
+			{/each}
+		</div>
+		<div class="flex flex-1 rounded-xl border border-edge bg-card p-1" title="How much to track">
+			{#each [['discs', '🥏 Discs'], ['lies', '📍 Lies'], ['score', '# Score']] as [value, label] (value)}
+				<button
+					class="flex-1 rounded-lg py-1.5 text-[11px] font-semibold whitespace-nowrap transition
+						{tracking === value ? 'bg-sky-500/25 text-sky-300' : 'text-ink-dim'}"
+					onclick={() => (tracking = value as Tracking)}
+				>
+					{label}
+				</button>
+			{/each}
+		</div>
 	</div>
 
 	{#if error}
@@ -250,21 +366,29 @@
 	{/if}
 
 	<!-- Stroke count: auto-counts from marked lies + holing out; −/+ for
-	     deleting a misrecorded throw or adding a penalty -->
+	     deleting a misrecorded throw or adding a penalty. Score-only mode
+	     works like a classic scorecard starting from par. -->
 	{#if currentHole}
+		{@const displayed = tracking === 'score' ? (scores.get(currentHole.hole_id) ?? currentHole.par) : strokes}
 		<div class="flex items-center justify-between rounded-2xl border border-edge bg-card p-4">
 			<button
 				class="flex h-12 w-12 items-center justify-center rounded-xl bg-card-raised text-2xl font-bold transition active:scale-90 disabled:opacity-40"
 				onclick={() => bumpScore(-1)}
-				disabled={strokes === 0}
+				disabled={tracking !== 'score' && strokes === 0}
 				aria-label="Remove a throw"
 			>
 				−
 			</button>
 			<div class="text-center">
-				<p class="text-3xl font-bold {strokes === 0 ? 'text-ink-dim' : ''}">{strokes}</p>
+				<p class="text-3xl font-bold {displayed === 0 ? 'text-ink-dim' : ''}">{displayed}</p>
 				<p class="text-xs text-ink-dim">
-					{strokes === 0 ? 'tee off, then mark your lie' : `throw${strokes === 1 ? '' : 's'}`}
+					{tracking === 'score'
+						? scores.has(currentHole.hole_id)
+							? 'strokes'
+							: 'tap − / + to score'
+						: strokes === 0
+							? 'tee off, then mark your lie'
+							: `throw${strokes === 1 ? '' : 's'}`}
 				</p>
 			</div>
 			<button
@@ -277,3 +401,32 @@
 		</div>
 	{/if}
 </main>
+
+<!-- Disc picker sheet: which disc was that throw? -->
+{#if pendingThrow}
+	<div class="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md rounded-t-2xl border-t border-edge bg-card/95 p-4 pb-24 backdrop-blur">
+		<p class="text-sm font-semibold">
+			{pendingThrow.holeOut ? 'Holed out! What did you putt with?' : 'What did you throw?'}
+		</p>
+		<div class="-mx-1 mt-2 overflow-x-auto px-1">
+			<div class="flex w-max gap-2">
+				{#each discs as disc (disc.disc_id)}
+					<button
+						class="rounded-full border border-edge bg-card-raised px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition active:scale-95 disabled:opacity-50"
+						onclick={() => resolvePendingThrow(disc.disc_id)}
+						disabled={savingThrow}
+					>
+						{disc.name}
+					</button>
+				{/each}
+			</div>
+		</div>
+		<button
+			class="mt-3 w-full rounded-xl border border-edge py-2.5 text-xs font-semibold text-ink-dim transition active:scale-95"
+			onclick={() => resolvePendingThrow(null)}
+			disabled={savingThrow}
+		>
+			Skip
+		</button>
+	</div>
+{/if}

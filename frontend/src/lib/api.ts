@@ -127,7 +127,8 @@ export const api = {
 			body: JSON.stringify({ score })
 		}),
 	finishRound: (roundId: number) =>
-		request<Round>(`/rounds/${roundId}/finish`, { method: 'POST' })
+		request<Round>(`/rounds/${roundId}/finish`, { method: 'POST' }),
+	deleteRound: (roundId: number) => request(`/rounds/${roundId}`, { method: 'DELETE' })
 };
 
 export function loginUrl(): string {
