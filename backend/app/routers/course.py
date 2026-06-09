@@ -1,4 +1,5 @@
 from collections import namedtuple
+from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -8,8 +9,8 @@ from app.models import Course, User, Hole, HoleNode, HoleEdge, Disc, UserDiscSta
 from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse, HoleNodeCreate, HoleEdgeCreate
 from app.dependencies import get_current_user
 from app.graph import dijkstra, compute_edge_weight
-from app.recommendation import SegmentRecommendation, recommend_path
-from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence
+from app.recommendation import SegmentRecommendation, recommend_path, player_reach
+from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence, compute_fairway_polygon, haversine_feet
 from app.wind import get_wind
 
 CenterlinePoint = namedtuple("CenterlinePoint", ["latitude", "longitude"])
@@ -37,6 +38,8 @@ async def get_path(
     hole_id: int,
     start_node_id: Optional[int] = None,
     end_node_id: Optional[int] = None,
+    lie_latitude: Optional[float] = None,
+    lie_longitude: Optional[float] = None,
     mode: str = "balanced",
     use_wind: bool = False,
     wind_speed: Optional[float] = None,
@@ -64,6 +67,25 @@ async def get_path(
     start = node_map.get(start_node_id) if start_node_id else tee
     end = node_map.get(end_node_id) if end_node_id else basket
 
+    # Live round mode: the player's lie becomes a virtual start node wired
+    # into the graph, so the plan adapts to wherever the last throw landed.
+    if lie_latitude is not None and lie_longitude is not None:
+        lie = SimpleNamespace(
+            hole_node_id=0, hole_id=hole_id, node_type="tee", sequence=-1,
+            label="Your lie", latitude=lie_latitude, longitude=lie_longitude,
+            centerline_distance=None, is_fairway=False,
+        )
+        node_map[0] = lie
+        for n in nodes:
+            if n.latitude is None or n.longitude is None or n.node_type == "tee":
+                continue
+            dist = haversine_feet(lie_latitude, lie_longitude, n.latitude, n.longitude)
+            edges.append(SimpleNamespace(
+                hole_edge_id=0, from_node_id=0, to_node_id=n.hole_node_id,
+                distance=round(dist), fairway_width=None, edge_hazards=[],
+            ))
+        start = lie
+
     if start is None or end is None:
         raise HTTPException(status_code=400, detail="Could not resolve start or end node")
 
@@ -90,6 +112,16 @@ async def get_path(
             return compute_fairway_width_at_sequence(fairway_nodes, to_node.sequence)
         return None
 
+    # Player reach informs routing: edges beyond a single throw cost more,
+    # and hazard tolerance scales with mode.
+    discs = db.query(Disc).filter(Disc.user_id == current_user.user_id).all()
+    disc_stats = db.query(UserDiscStat).filter(
+        UserDiscStat.user_id == current_user.user_id
+    ).all()
+    disc_distances = {stat.disc_id: stat.avg_distance for stat in disc_stats}
+    disc_max_distances = {stat.disc_id: stat.max_distance for stat in disc_stats}
+    reach = player_reach(discs, disc_distances, disc_max_distances, mode)
+
     edge_tuples = [
         (
             e.from_node_id,
@@ -99,6 +131,8 @@ async def get_path(
                 node_map.get(e.to_node_id),
                 centerline_distance=effective_centerline_distance(node_map.get(e.to_node_id)),
                 fairway_width=effective_fairway_width(e),
+                mode=mode,
+                reach=reach,
             ),
         )
         for e in edges
@@ -119,13 +153,6 @@ async def get_path(
         if edge:
             path_edges.append(edge)
             total_distance += edge.distance
-
-    discs = db.query(Disc).filter(Disc.user_id == current_user.user_id).all()
-    disc_stats = db.query(UserDiscStat).filter(
-        UserDiscStat.user_id == current_user.user_id
-    ).all()
-    disc_distances = {stat.disc_id: stat.avg_distance for stat in disc_stats}
-    disc_max_distances = {stat.disc_id: stat.max_distance for stat in disc_stats}
 
     # Wind: explicit params win; otherwise fetch live conditions at the tee
     resolved_wind_speed = wind_speed or 0.0
@@ -152,7 +179,8 @@ async def get_path(
         edges=path_edges,
         total_distance=total_distance,
         node_count=len(path_nodes),
-        recommendations=recommendations
+        recommendations=recommendations,
+        fairway_polygon=compute_fairway_polygon(fairway_nodes, edges)
     )
 
 @router.post("/{course_id}/holes/{hole_id}/nodes", response_model=HoleNodeResponse)

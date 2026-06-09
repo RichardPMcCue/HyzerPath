@@ -42,12 +42,13 @@ class FakeEdge:
 
 
 class FakeDisc:
-    def __init__(self, disc_id, name, fade=0.0, turn=0.0, manufacturer="Test"):
+    def __init__(self, disc_id, name, fade=0.0, turn=0.0, speed=9.0, manufacturer="Test"):
         self.disc_id = disc_id
         self.name = name
         self.manufacturer = manufacturer
         self.fade = fade
         self.turn = turn
+        self.speed = speed
 
 
 def edge_lookup_for(edges):
@@ -240,3 +241,102 @@ def test_aggressive_uses_max_distance():
 
 def test_empty_inputs():
     assert recommend_path(path_nodes=[], edge_lookup={}, discs=[], disc_distances={}) == []
+
+
+# --- mode-aware routing (edge weights) ---
+
+def test_edge_weight_mode_changes_route_choice():
+    """A direct line over water should only win for aggressive players who
+    can actually throw it. This routes Dijkstra, not just pruning."""
+    from app.graph import compute_edge_weight, dijkstra
+
+    safe1 = FakeEdge(1, 2, 230)
+    safe2 = FakeEdge(2, 3, 205)
+    direct = FakeEdge(1, 3, 405, hazards=("water",))
+
+    def route(mode, reach):
+        edge_tuples = [
+            (e.from_node_id, e.to_node_id, compute_edge_weight(e, mode=mode, reach=reach))
+            for e in (safe1, safe2, direct)
+        ]
+        return dijkstra(edge_tuples, 1, 3)
+
+    assert route("conservative", reach=342) == [1, 2, 3]  # around the water
+    assert route("balanced", reach=380) == [1, 2, 3]      # hazard not worth it
+    assert route("aggressive", reach=430) == [1, 3]       # send it
+
+
+def test_edge_weight_beyond_reach_costs_more():
+    from app.graph import compute_edge_weight
+
+    edge = FakeEdge(1, 2, 400)
+    within = compute_edge_weight(edge, reach=450)
+    beyond = compute_edge_weight(edge, reach=300)
+    assert within == pytest.approx(1.0)
+    assert beyond == pytest.approx(400 / 300)
+
+
+# --- throw roles (drive / placement / approach / putt) ---
+
+def test_classify_throw():
+    from app.recommendation import classify_throw
+    assert classify_throw(30, is_final=True, reach=350) == "putt"
+    assert classify_throw(120, is_final=True, reach=350) == "approach"
+    assert classify_throw(320, is_final=False, reach=350) == "drive"
+    assert classify_throw(180, is_final=False, reach=350) == "placement"
+
+
+def test_approach_prefers_controllable_disc():
+    """Same distance fit, same flight: the putter beats the driver when the
+    job is landing close, not covering ground."""
+    nodes, edges = straight_north_path(200, 3)  # 200ft drive + 200ft approach
+    driver = FakeDisc(1, "Beat Driver", fade=1.0, turn=-1.0)
+    putter = FakeDisc(2, "Judge", fade=1.0, turn=-1.0)
+    driver.speed = 12.0
+    putter.speed = 2.0
+
+    recs = recommend_path(
+        path_nodes=nodes, edge_lookup=edge_lookup_for(edges),
+        discs=[driver, putter],
+        disc_distances={1: 210, 2: 210},  # identical distance profiles
+        mode="conservative",  # reach 189: no skip, two throws
+    )
+    assert len(recs) == 2
+    assert recs[-1].throw_type == "approach"
+    assert recs[-1].disc == "Test Judge"
+
+
+def test_final_putt_labeled():
+    nodes, edges = straight_north_path(35, 2)  # one 35ft throw to the basket
+    putter = FakeDisc(1, "Judge", fade=0.0, turn=0.0)
+    putter.speed = 2.0
+    recs = recommend_path(
+        path_nodes=nodes, edge_lookup=edge_lookup_for(edges),
+        discs=[putter], disc_distances={1: 220}, mode="balanced",
+    )
+    assert recs[0].throw_type == "putt"
+
+
+# --- fairway polygon ---
+
+def test_fairway_polygon_buffers_centerline():
+    from app.utils import compute_fairway_polygon, haversine_feet
+
+    nodes, edges = straight_north_path(200, 3)
+    edges[0].fairway_width = 40
+    edges[1].fairway_width = 40
+    ring = compute_fairway_polygon(nodes, edges)
+
+    # Closed ring: 3 left + 3 right + closing point
+    assert len(ring) == 7
+    assert ring[0] == ring[-1]
+    # Corridor width at the tee: distance between first left and last right point ≈ 40ft
+    left_first = ring[0]
+    right_first = ring[-2]
+    width = haversine_feet(left_first[0], left_first[1], right_first[0], right_first[1])
+    assert width == pytest.approx(40, rel=0.05)
+
+
+def test_fairway_polygon_needs_two_points():
+    from app.utils import compute_fairway_polygon
+    assert compute_fairway_polygon([FakeNode(1, lat=1.0, lon=1.0)], []) == []

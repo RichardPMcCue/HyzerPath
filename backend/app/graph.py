@@ -36,8 +36,29 @@ def dijkstra(edges: list, start_id: int, end_id: int, node_map: dict = None) -> 
 
     return []
 
-def compute_edge_weight(edge, to_node=None, centerline_distance=None, fairway_width=None) -> float:
-    base = 1.0  # one throw = base cost of 1
+# How much a hazard on an edge costs (in fractions of a throw), per mode.
+# Conservative players route around trouble; aggressive players accept it.
+MODE_HAZARD_PENALTY = {
+    "conservative": 1.5,
+    "balanced": 1.0,
+    "aggressive": 0.15,
+}
+
+
+def compute_edge_weight(
+    edge,
+    to_node=None,
+    centerline_distance=None,
+    fairway_width=None,
+    mode: str = "balanced",
+    reach: float = None,
+) -> float:
+    # Base cost ≈ throws needed. An edge longer than the player's reach
+    # can't be covered in one throw, so it costs proportionally more —
+    # this is what makes Dijkstra prefer routes the player can execute.
+    base = 1.0
+    if reach and edge.distance and edge.distance > reach:
+        base = edge.distance / reach
 
     # Prefer explicitly computed values (dynamic centerline/width), fall back
     # to what's stored on the node/edge.
@@ -53,4 +74,6 @@ def compute_edge_weight(edge, to_node=None, centerline_distance=None, fairway_wi
         else:
             centerline_penalty = centerline_distance / 100.0
 
-    return base + centerline_penalty
+    hazard_penalty = len(edge.edge_hazards) * MODE_HAZARD_PENALTY.get(mode, 1.0)
+
+    return base + centerline_penalty + hazard_penalty

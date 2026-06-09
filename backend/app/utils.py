@@ -105,6 +105,65 @@ def compute_dynamic_centerline(fairway_nodes: list) -> list:
     return [(n.latitude, n.longitude) for n in sorted_nodes]
 
 
+def offset_point(lat: float, lon: float, bearing_deg: float, dist_ft: float) -> tuple:
+    """Moves a lat/lon point dist_ft feet along a compass bearing."""
+    b = math.radians(bearing_deg)
+    dlat = dist_ft * math.cos(b) / 364000.0
+    dlon = dist_ft * math.sin(b) / (364000.0 * math.cos(math.radians(lat)))
+    return (lat + dlat, lon + dlon)
+
+
+def compute_fairway_polygon(fairway_nodes: list, edges: list, default_width: float = 30.0) -> list:
+    """Buffers the fairway centerline into a corridor polygon for map display.
+
+    Walks the fairway nodes in sequence, offsetting each centerline point
+    perpendicular to the local direction by half the fairway width (taken from
+    the adjacent edges, falling back to default_width). Returns a closed ring
+    of (lat, lon) tuples, or [] if there aren't enough located nodes."""
+    pts = sorted(
+        [n for n in fairway_nodes if n.latitude is not None and n.longitude is not None],
+        key=lambda n: n.sequence,
+    )
+    if len(pts) < 2:
+        return []
+
+    width_by_pair = {}
+    for e in edges:
+        if e.fairway_width:
+            width_by_pair[(e.from_node_id, e.to_node_id)] = float(e.fairway_width)
+            width_by_pair[(e.to_node_id, e.from_node_id)] = float(e.fairway_width)
+
+    bearing = lambda a, b: bearing_between(a.latitude, a.longitude, b.latitude, b.longitude)
+
+    left, right = [], []
+    for i, p in enumerate(pts):
+        # Local direction: average of adjacent segment bearings (vector mean)
+        vx = vy = 0.0
+        if i > 0:
+            b = math.radians(bearing(pts[i - 1], p))
+            vx += math.sin(b); vy += math.cos(b)
+        if i < len(pts) - 1:
+            b = math.radians(bearing(p, pts[i + 1]))
+            vx += math.sin(b); vy += math.cos(b)
+        direction = math.degrees(math.atan2(vx, vy)) % 360.0
+
+        widths = []
+        if i > 0:
+            w = width_by_pair.get((pts[i - 1].hole_node_id, p.hole_node_id))
+            if w: widths.append(w)
+        if i < len(pts) - 1:
+            w = width_by_pair.get((p.hole_node_id, pts[i + 1].hole_node_id))
+            if w: widths.append(w)
+        half = (sum(widths) / len(widths) if widths else default_width) / 2.0
+
+        left.append(offset_point(p.latitude, p.longitude, direction - 90.0, half))
+        right.append(offset_point(p.latitude, p.longitude, direction + 90.0, half))
+
+    ring = left + right[::-1]
+    ring.append(ring[0])
+    return ring
+
+
 def compute_fairway_width_at_sequence(fairway_nodes: list, sequence: int) -> Optional[float]:
     """
     Estimates fairway width at a given sequence point by finding

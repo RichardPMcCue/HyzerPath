@@ -18,6 +18,28 @@ MODE_FACTORS = {
     "aggressive": 1.0,  # aggressive uses max_distance instead of avg
 }
 
+PUTT_RANGE_FT = 40.0       # ~C1: just putt the damn thing
+DRIVE_FRACTION = 0.8       # segments near full reach are drives
+
+# Placement and approach shots reward control: penalize disc speed since the
+# goal is landing close (C1), not covering distance.
+CONTROL_PENALTY = {
+    "drive": 0.0,
+    "placement": 0.06,
+    "approach": 0.12,
+    "putt": 0.3,
+}
+
+
+def classify_throw(distance: float, is_final: bool, reach: float) -> str:
+    """What job does this throw have? Final throws are putts (inside C1-ish)
+    or approaches; earlier throws are drives or placement shots."""
+    if is_final:
+        return "putt" if distance <= PUTT_RANGE_FT else "approach"
+    if reach and distance >= DRIVE_FRACTION * reach:
+        return "drive"
+    return "placement"
+
 
 class SegmentRecommendation(BaseModel):
     disc: str
@@ -25,6 +47,7 @@ class SegmentRecommendation(BaseModel):
     distance: int
     effective_distance: int
     shot_shape: str
+    throw_type: str = "drive"  # drive | placement | approach | putt
     from_node_id: int
     to_node_id: int
     hazards: list[str]
@@ -86,11 +109,14 @@ def disc_net_stability(disc) -> float:
     return fade + turn
 
 
-def score_disc(disc, base_distance: float, required_distance: float, desired_stability: float) -> float:
-    """Higher is better. Balances distance fit against flight shape fit."""
+def score_disc(disc, base_distance: float, required_distance: float, desired_stability: float, throw_type: str = "drive") -> float:
+    """Higher is better. Balances distance fit, flight shape fit, and control:
+    placement/approach shots prefer slow, accurate discs over drivers."""
     distance_score = -abs(base_distance - required_distance) / 25.0
     flight_score = -abs(disc_net_stability(disc) - desired_stability)
-    return distance_score + flight_score
+    speed = disc.speed if disc.speed is not None else 9.0
+    control_score = -speed * CONTROL_PENALTY.get(throw_type, 0.0)
+    return distance_score + flight_score + control_score
 
 
 def _node_has_gps(node) -> bool:
@@ -128,10 +154,11 @@ def _hazards_between(path_nodes: list, i: int, j: int, edge_lookup: dict) -> lis
     return list(dict.fromkeys(hazards))
 
 
-def _reach_limit(discs: list, disc_distances: dict, disc_max_distances: dict, mode: str) -> float:
+def player_reach(discs: list, disc_distances: dict, disc_max_distances: dict, mode: str) -> float:
     """The longest single throw the engine will plan around, per mode."""
     if not discs:
         return 0.0
+    disc_max_distances = disc_max_distances or {}
     best_avg = max((disc_distances.get(d.disc_id, 0) or 0) for d in discs)
     if mode == "aggressive":
         best_max = max((disc_max_distances.get(d.disc_id, 0) or 0) for d in discs)
@@ -201,7 +228,7 @@ def recommend_path(
 
     disc_max_distances = disc_max_distances or {}
     wind_from_deg = wind_direction_to_degrees(wind_direction)
-    reach_limit = _reach_limit(discs, disc_distances, disc_max_distances, mode)
+    reach_limit = player_reach(discs, disc_distances, disc_max_distances, mode)
 
     segments = plan_segments(path_nodes, edge_lookup, reach_limit, mode, wind_speed, wind_from_deg)
     recommendations = []
@@ -239,6 +266,8 @@ def recommend_path(
         # Desired net stability: a left finish (negative deg) wants fade
         desired_stability = max(-3.0, min(4.0, -finish_deg_adjusted / 15.0))
 
+        throw_type = classify_throw(distance, is_final=(seg_idx == len(segments) - 1), reach=reach_limit)
+
         # Filter discs whose wind-adjusted carry covers the segment
         def carry(d):
             base = disc_distances.get(d.disc_id, 0) or 0
@@ -250,7 +279,7 @@ def recommend_path(
 
         best_disc = max(
             capable,
-            key=lambda d: score_disc(d, carry(d), distance, desired_stability),
+            key=lambda d: score_disc(d, carry(d), distance, desired_stability, throw_type),
         )
 
         recommendations.append(SegmentRecommendation(
@@ -259,6 +288,7 @@ def recommend_path(
             distance=round(distance),
             effective_distance=round(distance + (HEADWIND_FT_PER_MPH * headwind if headwind > 0 else TAILWIND_FT_PER_MPH * headwind)),
             shot_shape=shot_shape,
+            throw_type=throw_type,
             from_node_id=from_node.hole_node_id,
             to_node_id=to_node.hole_node_id,
             hazards=_hazards_between(path_nodes, i, j, edge_lookup),

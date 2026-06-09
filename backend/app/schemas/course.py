@@ -77,6 +77,8 @@ class HolePathResponse(BaseModel):
     total_distance: float
     node_count: int
     recommendations: list[SegmentRecommendation] = []
+    # Closed ring of [lat, lon] pairs tracing the fairway corridor, for map display
+    fairway_polygon: list[tuple[float, float]] = []
 
 class CourseCreate(BaseModel):
     name: str
