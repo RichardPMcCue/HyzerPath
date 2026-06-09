@@ -9,10 +9,15 @@
 	let stats = $state<Map<number, DiscStat>>(new Map());
 	let error = $state<string | null>(null);
 
-	// throw distance editor
+	// disc editor (distances + flight numbers + color)
 	let editingDiscId = $state<number | null>(null);
 	let editAvg = $state('');
 	let editMax = $state('');
+	let editSpeed = $state('');
+	let editGlide = $state('');
+	let editTurn = $state('');
+	let editFade = $state('');
+	let editColor = $state('#2a3832');
 	let savingStat = $state(false);
 
 	// add-disc flow
@@ -42,21 +47,37 @@
 		const stat = stats.get(disc.disc_id);
 		editAvg = stat ? String(stat.avg_distance) : '';
 		editMax = stat?.max_distance ? String(stat.max_distance) : '';
+		editSpeed = disc.speed !== null ? String(disc.speed) : '';
+		editGlide = disc.glide !== null ? String(disc.glide) : '';
+		editTurn = disc.turn !== null ? String(disc.turn) : '';
+		editFade = disc.fade !== null ? String(disc.fade) : '';
+		editColor = disc.color || '#2a3832';
 		editingDiscId = disc.disc_id;
 	}
 
-	async function saveStat(discId: number) {
-		const avg = parseInt(editAvg, 10);
-		if (!avg || avg <= 0) return;
+	async function saveDisc(discId: number) {
 		savingStat = true;
 		try {
-			const max = parseInt(editMax, 10);
-			const saved = await api.setDiscStat(discId, {
-				avg_distance: avg,
-				max_distance: max > 0 ? max : null
+			// Flight numbers + color
+			await api.updateDisc(discId, {
+				speed: editSpeed !== '' ? Number(editSpeed) : null,
+				glide: editGlide !== '' ? Number(editGlide) : null,
+				turn: editTurn !== '' ? Number(editTurn) : null,
+				fade: editFade !== '' ? Number(editFade) : null,
+				color: editColor
 			});
-			stats = new Map(stats).set(discId, saved);
+			// Throw distances (optional)
+			const avg = parseInt(editAvg, 10);
+			if (avg > 0) {
+				const max = parseInt(editMax, 10);
+				const saved = await api.setDiscStat(discId, {
+					avg_distance: avg,
+					max_distance: max > 0 ? max : null
+				});
+				stats = new Map(stats).set(discId, saved);
+			}
 			editingDiscId = null;
+			loadBag();
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -270,6 +291,36 @@
 										/>
 									</label>
 								</div>
+								<div class="mt-2 flex items-end gap-2">
+									<label class="flex-1 text-xs text-ink-dim">
+										Speed
+										<input type="number" step="0.5" bind:value={editSpeed}
+											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none" />
+									</label>
+									<label class="flex-1 text-xs text-ink-dim">
+										Glide
+										<input type="number" step="0.5" bind:value={editGlide}
+											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none" />
+									</label>
+									<label class="flex-1 text-xs text-ink-dim">
+										Turn
+										<input type="number" step="0.5" bind:value={editTurn}
+											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none" />
+									</label>
+									<label class="flex-1 text-xs text-ink-dim">
+										Fade
+										<input type="number" step="0.5" bind:value={editFade}
+											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none" />
+									</label>
+									<label class="text-xs text-ink-dim">
+										Color
+										<input
+											type="color"
+											bind:value={editColor}
+											class="mt-1 block h-9 w-12 cursor-pointer rounded-lg border border-edge bg-card-raised"
+										/>
+									</label>
+								</div>
 								<div class="mt-3 flex items-center justify-between">
 									<button
 										class="text-xs font-medium text-red-400"
@@ -279,8 +330,8 @@
 									</button>
 									<button
 										class="rounded-lg bg-accent px-4 py-2 text-xs font-bold text-surface transition active:scale-95 disabled:opacity-50"
-										disabled={savingStat || !parseInt(editAvg, 10)}
-										onclick={() => saveStat(disc.disc_id)}
+										disabled={savingStat}
+										onclick={() => saveDisc(disc.disc_id)}
 									>
 										{savingStat ? 'Saving…' : 'Save'}
 									</button>

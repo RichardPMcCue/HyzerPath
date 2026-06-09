@@ -3,33 +3,20 @@
 
 	let { discs }: { discs: Disc[] } = $props();
 
-	// Rows: speed bands (drivers at the top, like the classic bag matrix)
-	const rows = [
-		{ label: 'Distance', min: 10, max: 15 },
-		{ label: 'Fairway', min: 7, max: 9.5 },
-		{ label: 'Midrange', min: 4, max: 6.5 },
-		{ label: 'Putters', min: 0, max: 3.5 }
-	];
-
-	// Columns: net stability (turn + fade), understable -> overstable
-	const cols = [
-		{ label: 'Very US', min: -Infinity, max: -2 },
-		{ label: 'Understable', min: -2, max: -0.5 },
-		{ label: 'Stable', min: -0.5, max: 1.5 },
-		{ label: 'Overstable', min: 1.5, max: 3 },
-		{ label: 'Very OS', min: 3, max: Infinity }
-	];
+	// Y axis: speed, high at the top down to 1
+	const speeds = Array.from({ length: 14 }, (_, i) => 14 - i);
+	// X axis: combined stability (turn + fade), positive (overstable) on the
+	// LEFT, negative (understable) on the RIGHT
+	const stabilities = Array.from({ length: 11 }, (_, i) => 5 - i); // 5 .. -5
 
 	function net(d: Disc): number {
 		return (d.turn ?? 0) + (d.fade ?? 0);
 	}
 
-	function cell(row: (typeof rows)[0], col: (typeof cols)[0]): Disc[] {
-		return discs.filter((d) => {
-			const s = d.speed ?? 0;
-			const n = net(d);
-			return s >= row.min && s <= row.max && n > col.min && n <= col.max;
-		});
+	function cell(speed: number, stability: number): Disc[] {
+		return discs.filter(
+			(d) => Math.round(d.speed ?? 0) === speed && Math.round(net(d)) === stability
+		);
 	}
 
 	function textColor(bg: string | null): string {
@@ -42,33 +29,40 @@
 			0.114 * parseInt(hex.slice(4, 6), 16);
 		return lum > 150 ? '#0c1210' : '#ffffff';
 	}
+
+	// Only render speed rows from the fastest disc down to 1 (skip empty top)
+	const maxSpeed = $derived(
+		Math.min(14, Math.max(4, ...discs.map((d) => Math.round(d.speed ?? 0))))
+	);
+	const visibleSpeeds = $derived(speeds.filter((s) => s <= maxSpeed));
 </script>
 
 <div class="-mx-4 overflow-x-auto px-4">
-	<div class="min-w-[480px]">
-		<!-- Column headers -->
-		<div class="grid grid-cols-[64px_repeat(5,1fr)] gap-1 pb-1">
-			<span></span>
-			{#each cols as col (col.label)}
-				<span class="text-center text-[10px] font-semibold tracking-wide text-ink-dim uppercase">
-					{col.label}
+	<div class="min-w-[560px]">
+		<!-- Stability axis (top) -->
+		<div class="grid grid-cols-[28px_repeat(11,1fr)] gap-0.5 pb-1">
+			<span class="flex items-end justify-center pb-0.5 text-[9px] text-ink-dim">spd</span>
+			{#each stabilities as s (s)}
+				<span class="text-center text-[11px] font-bold text-ink-dim">
+					{s > 0 ? `+${s}` : s}
 				</span>
 			{/each}
 		</div>
 
-		{#each rows as row (row.label)}
-			<div class="grid grid-cols-[64px_repeat(5,1fr)] gap-1 pb-1">
-				<span class="flex items-center text-[10px] font-semibold tracking-wide text-ink-dim uppercase">
-					{row.label}
+		{#each visibleSpeeds as speed (speed)}
+			<div class="grid grid-cols-[28px_repeat(11,1fr)] gap-0.5 pb-0.5">
+				<span class="flex items-center justify-center text-[11px] font-bold text-ink-dim">
+					{speed}
 				</span>
-				{#each cols as col (col.label)}
-					{@const cellDiscs = cell(row, col)}
+				{#each stabilities as stability (stability)}
+					{@const cellDiscs = cell(speed, stability)}
 					<div
-						class="flex min-h-14 flex-col items-stretch justify-center gap-1 rounded-lg border border-edge bg-card p-1"
+						class="flex min-h-9 flex-col items-stretch justify-center gap-0.5 rounded border p-0.5
+							{cellDiscs.length > 0 ? 'border-edge bg-card' : 'border-edge/40 bg-card/40'}"
 					>
 						{#each cellDiscs as disc (disc.disc_id)}
 							<span
-								class="truncate rounded px-1.5 py-0.5 text-center text-[10px] font-bold"
+								class="truncate rounded px-1 py-0.5 text-center text-[9px] font-bold leading-tight"
 								style="background:{disc.color || '#2a3832'};color:{textColor(disc.color)}"
 								title="{disc.manufacturer} {disc.name} · {disc.speed}/{disc.glide}/{disc.turn}/{disc.fade}"
 							>
@@ -79,8 +73,12 @@
 				{/each}
 			</div>
 		{/each}
+
+		<div class="grid grid-cols-[28px_repeat(11,1fr)] pt-1">
+			<span></span>
+			<span class="col-span-4 text-left text-[10px] text-ink-dim">← overstable</span>
+			<span class="col-span-3 text-center text-[10px] text-ink-dim">turn + fade</span>
+			<span class="col-span-4 text-right text-[10px] text-ink-dim">understable →</span>
+		</div>
 	</div>
 </div>
-<p class="pt-1 text-center text-[10px] text-ink-dim">
-	Columns: turn + fade (understable → overstable). Gaps show where your bag is missing coverage.
-</p>

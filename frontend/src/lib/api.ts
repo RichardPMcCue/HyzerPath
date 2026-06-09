@@ -9,6 +9,7 @@ import type {
 	HolePath,
 	Round,
 	RoundHoleScore,
+	RoundStats,
 	ThrowMeasurement,
 	ThrowSession
 } from '$lib/types';
@@ -55,6 +56,8 @@ export const api = {
 		request<DiscItResult[]>(`/bag/discs/search?name=${encodeURIComponent(name)}`),
 	createDisc: (disc: Partial<Disc>) =>
 		request<Disc>('/bag/discs', { method: 'POST', body: JSON.stringify(disc) }),
+	updateDisc: (discId: number, disc: Partial<Disc>) =>
+		request<Disc>(`/bag/discs/${discId}`, { method: 'PATCH', body: JSON.stringify(disc) }),
 	deleteDisc: (discId: number) => request(`/bag/discs/${discId}`, { method: 'DELETE' }),
 
 	// --- throw stats ---
@@ -128,7 +131,26 @@ export const api = {
 		}),
 	finishRound: (roundId: number) =>
 		request<Round>(`/rounds/${roundId}/finish`, { method: 'POST' }),
-	deleteRound: (roundId: number) => request(`/rounds/${roundId}`, { method: 'DELETE' })
+	deleteRound: (roundId: number) => request(`/rounds/${roundId}`, { method: 'DELETE' }),
+	recordRoundThrow: (
+		roundId: number,
+		holeId: number,
+		throwIn: {
+			throw_number: number;
+			disc_id?: number | null;
+			start_latitude?: number | null;
+			start_longitude?: number | null;
+			end_latitude?: number | null;
+			end_longitude?: number | null;
+			is_holed?: boolean;
+		}
+	) =>
+		request(`/rounds/${roundId}/holes/${holeId}/throws`, {
+			method: 'POST',
+			body: JSON.stringify(throwIn)
+		}),
+	getRoundStats: (roundId: number) =>
+		request<RoundStats>(`/rounds/${roundId}/stats`)
 };
 
 export function loginUrl(): string {

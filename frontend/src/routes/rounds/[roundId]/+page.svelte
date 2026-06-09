@@ -30,7 +30,9 @@
 	let discs = $state<Disc[]>([]);
 	let prevPoint = $state<{ latitude: number; longitude: number } | null>(null);
 	let pendingThrow = $state<{
-		end: { latitude: number; longitude: number };
+		number: number;
+		start: { latitude: number; longitude: number } | null;
+		end: { latitude: number; longitude: number } | null;
 		holeOut: boolean;
 	} | null>(null);
 	let savingThrow = $state(false);
@@ -107,37 +109,41 @@
 		pendingThrow = null;
 	}
 
-	// Records the completed throw (prev position -> end) as a one-throw
-	// measuring session so it feeds UserDiscStat, exactly like the Measure tab.
-	async function recordThrowSegment(discId: number | null, end: { latitude: number; longitude: number }) {
-		const start = prevPoint ?? teeCoords;
-		if (!start || discId === null) return;
+	// Persists a throw to round_throws: powers C1/C2 putting, fairway hits,
+	// and (when a disc is tagged) UserDiscStat for the engine.
+	async function recordThrow(t: {
+		number: number;
+		start: { latitude: number; longitude: number } | null;
+		end: { latitude: number; longitude: number } | null;
+		holeOut: boolean;
+		discId: number | null;
+	}) {
+		if (!currentHole) return;
 		try {
-			const s = await api.createThrowSession({
-				start_latitude: start.latitude,
-				start_longitude: start.longitude,
-				label: `Round ${roundId}`
-			});
-			await api.recordThrow(s.session_id, {
-				end_latitude: end.latitude,
-				end_longitude: end.longitude,
-				disc_id: discId
+			await api.recordRoundThrow(roundId, currentHole.hole_id, {
+				throw_number: t.number,
+				disc_id: t.discId,
+				start_latitude: t.start?.latitude ?? null,
+				start_longitude: t.start?.longitude ?? null,
+				end_latitude: t.end?.latitude ?? null,
+				end_longitude: t.end?.longitude ?? null,
+				is_holed: t.holeOut
 			});
 		} catch {
-			/* stat logging is best-effort; the stroke already counted */
+			/* throw logging is best-effort; the stroke already counted */
 		}
 	}
 
 	async function resolvePendingThrow(discId: number | null) {
 		if (!pendingThrow) return;
 		savingThrow = true;
-		const { end, holeOut: wasHoleOut } = pendingThrow;
+		const p = pendingThrow;
 		try {
-			await recordThrowSegment(discId, end);
+			await recordThrow({ ...p, discId });
 		} finally {
 			savingThrow = false;
 			pendingThrow = null;
-			if (wasHoleOut) advanceHole();
+			if (p.holeOut) advanceHole();
 		}
 	}
 
@@ -173,9 +179,13 @@
 				});
 			});
 			const point = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-			await saveScore(currentHole.hole_id, strokes + 1);
+			const number = strokes + 1;
+			const start = prevPoint ?? teeCoords;
+			await saveScore(currentHole.hole_id, number);
 			if (tracking === 'discs') {
-				pendingThrow = { end: point, holeOut: false }; // ask which disc
+				pendingThrow = { number, start, end: point, holeOut: false }; // ask which disc
+			} else {
+				recordThrow({ number, start, end: point, holeOut: false, discId: null });
 			}
 			lie = point;
 			prevPoint = point;
@@ -189,16 +199,17 @@
 	// The holing throw: counts a stroke, no lie to mark, advance to next hole.
 	async function holeOut() {
 		if (!currentHole) return;
-		await saveScore(currentHole.hole_id, strokes + 1);
+		const number = strokes + 1;
+		const start = prevPoint ?? teeCoords;
+		await saveScore(currentHole.hole_id, number);
 		const basket = path?.nodes.find((n) => n.node_type === 'basket' && n.latitude !== null);
-		if (tracking === 'discs' && basket) {
+		const end = basket ? { latitude: basket.latitude!, longitude: basket.longitude! } : null;
+		if (tracking === 'discs') {
 			// Ask for the disc before moving on; advance happens after the sheet
-			pendingThrow = {
-				end: { latitude: basket.latitude!, longitude: basket.longitude! },
-				holeOut: true
-			};
+			pendingThrow = { number, start, end, holeOut: true };
 			return;
 		}
+		recordThrow({ number, start, end, holeOut: true, discId: null });
 		advanceHole();
 	}
 
