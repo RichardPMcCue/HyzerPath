@@ -6,7 +6,9 @@ import type {
 	Disc,
 	DiscItResult,
 	DiscStat,
-	HolePath
+	HolePath,
+	ThrowMeasurement,
+	ThrowSession
 } from '$lib/types';
 
 export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -60,6 +62,28 @@ export const api = {
 			method: 'PUT',
 			body: JSON.stringify(stat)
 		}),
+
+	// --- throw measuring ---
+	createThrowSession: (start: { start_latitude: number; start_longitude: number; label?: string }) =>
+		request<ThrowSession>('/throws/sessions', { method: 'POST', body: JSON.stringify(start) }),
+	updateThrowSession: (
+		sessionId: number,
+		update: { start_latitude?: number; start_longitude?: number; label?: string }
+	) =>
+		request<ThrowSession>(`/throws/sessions/${sessionId}`, {
+			method: 'PATCH',
+			body: JSON.stringify(update)
+		}),
+	recordThrow: (
+		sessionId: number,
+		throwIn: { end_latitude: number; end_longitude: number; disc_id?: number | null }
+	) =>
+		request<ThrowMeasurement>(`/throws/sessions/${sessionId}/throws`, {
+			method: 'POST',
+			body: JSON.stringify(throwIn)
+		}),
+	deleteThrow: (sessionId: number, throwId: number) =>
+		request(`/throws/sessions/${sessionId}/throws/${throwId}`, { method: 'DELETE' }),
 
 	// --- courses ---
 	getCourses: () => request<Course[]>('/courses'),

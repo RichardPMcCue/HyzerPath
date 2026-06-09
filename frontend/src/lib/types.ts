@@ -22,6 +22,25 @@ export interface DiscStat {
 	sample_size: number | null;
 }
 
+export interface ThrowMeasurement {
+	throw_id: number;
+	session_id: number;
+	disc_id: number | null;
+	end_latitude: number;
+	end_longitude: number;
+	distance_ft: number;
+	created_at: string;
+}
+
+export interface ThrowSession {
+	session_id: number;
+	label: string | null;
+	start_latitude: number;
+	start_longitude: number;
+	created_at: string;
+	throws: ThrowMeasurement[];
+}
+
 export interface DiscItResult {
 	name: string;
 	brand: string;

@@ -22,6 +22,7 @@ class User(Base):
     user_stats = relationship("UserStat", back_populates="user")
     round_stats = relationship("RoundStat", back_populates="user")
     disc_stats = relationship("UserDiscStat", back_populates="user")
+    throw_sessions = relationship("ThrowSession", back_populates="user")
 
 
 class UserThrowStyle(Base):
@@ -65,6 +66,37 @@ class UserDiscStat(Base):
 
     user = relationship("User", back_populates="disc_stats")
     disc = relationship("Disc", back_populates="disc_stats")
+
+
+class ThrowSession(Base):
+    """A measuring session: one marked start point (e.g. a tee or field spot),
+    reused across multiple measured throws."""
+    __tablename__ = "throw_sessions"
+
+    session_id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    label = Column(String)
+    start_latitude = Column(Float, nullable=False)
+    start_longitude = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="throw_sessions")
+    throws = relationship("ThrowMeasurement", back_populates="session", cascade="all, delete-orphan")
+
+
+class ThrowMeasurement(Base):
+    __tablename__ = "throw_measurements"
+
+    throw_id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, ForeignKey("throw_sessions.session_id"), nullable=False)
+    disc_id = Column(Integer, ForeignKey("discs.disc_id"), nullable=True)
+    end_latitude = Column(Float, nullable=False)
+    end_longitude = Column(Float, nullable=False)
+    distance_ft = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    session = relationship("ThrowSession", back_populates="throws")
+    disc = relationship("Disc")
 
 
 class Bag(Base):
