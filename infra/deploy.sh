@@ -4,7 +4,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/home/hyzerpath/hyzerpath}"
-VENV="${VENV:-$APP_DIR/backend/.venv}"
+VENV="${VENV:-$APP_DIR/backend/venv}"
 WEB_ROOT="${WEB_ROOT:-/var/www/hp}"
 SERVICE="${SERVICE:-hyzerpath}"
 
