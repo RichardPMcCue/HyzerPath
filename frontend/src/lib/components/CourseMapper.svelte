@@ -222,7 +222,9 @@
 </script>
 
 <div class="relative h-[55dvh] overflow-hidden rounded-2xl border border-edge">
-	<div bind:this={mapContainer} class="absolute inset-0"></div>
+	<!-- h-full instead of absolute: maplibre's CSS forces position:relative
+	     on this element, which would collapse an inset-0 box to 0 height -->
+	<div bind:this={mapContainer} class="h-full w-full"></div>
 
 	<!-- What the next tap does -->
 	<div

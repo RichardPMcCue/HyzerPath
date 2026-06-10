@@ -1,5 +1,8 @@
-@import 'tailwindcss';
+/* Vendor CSS first so Tailwind utilities win specificity ties —
+   maplibre sets .maplibregl-map{position:relative} which otherwise
+   overrides Tailwind's .absolute on map containers (height collapses to 0) */
 @import 'maplibre-gl/dist/maplibre-gl.css';
+@import 'tailwindcss';
 
 @theme {
 	--color-surface: #0c1210;
