@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import maplibregl from 'maplibre-gl';
 	import type { Feature, FeatureCollection } from 'geojson';
-	import { satelliteStyle } from '$lib/map';
+	import { autoResize, satelliteStyle } from '$lib/map';
 	import type { HoleNode, SegmentRecommendation } from '$lib/types';
 
 	let {
@@ -149,7 +149,11 @@
 			render();
 		});
 
-		return () => map?.remove();
+		const stopResize = autoResize(map, container);
+		return () => {
+			stopResize();
+			map?.remove();
+		};
 	});
 
 	$effect(() => {

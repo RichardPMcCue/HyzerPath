@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import maplibregl from 'maplibre-gl';
 	import type { FeatureCollection } from 'geojson';
-	import { satelliteStyle } from '$lib/map';
+	import { autoResize, satelliteStyle } from '$lib/map';
 	import type { MapperHole } from '$lib/types';
 	import { haversineFeet } from '$lib/geo';
 
@@ -213,7 +213,11 @@
 			}
 		});
 
-		return () => map?.remove();
+		const stopResize = autoResize(map, mapContainer);
+		return () => {
+			stopResize();
+			map?.remove();
+		};
 	});
 </script>
 

@@ -3,7 +3,7 @@
 	import maplibregl from 'maplibre-gl';
 	import type { FeatureCollection } from 'geojson';
 	import { api } from '$lib/api';
-	import { satelliteStyle } from '$lib/map';
+	import { autoResize, satelliteStyle } from '$lib/map';
 	import type { Disc, ThrowMeasurement, ThrowSession } from '$lib/types';
 
 	let mapContainer: HTMLDivElement | undefined = $state();
@@ -76,7 +76,11 @@
 			geolocate.trigger();
 		});
 
-		return () => map?.remove();
+		const stopResize = autoResize(map, mapContainer);
+		return () => {
+			stopResize();
+			map?.remove();
+		};
 	});
 
 	function linesGeoJSON(): FeatureCollection {
