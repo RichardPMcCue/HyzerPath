@@ -66,4 +66,4 @@ jobs:
             -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
             -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
             -d '{"status": "passed", "repo": "${{ github.repository }}"}' \
-            https://hp.rmccue.dev/deploy
+            https://hp.rmccue.dev/api/deploy
