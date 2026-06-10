@@ -132,3 +132,45 @@ def test_delete_waypoint_node(client):
     assert r.status_code == 200
     nodes = client.get(f"/courses/{cid}/holes/{hid}/nodes").json()
     assert len(nodes) == 2
+
+
+def _dogleg_with_trees(client):
+    """Right dogleg: tee north 200ft to corner, then east 200ft to basket,
+    with a tree hazard square sitting on the direct tee→basket line."""
+    cid = make_course(client)
+    hid = make_hole(client, cid)
+    add_node(client, cid, hid, "tee", 0, 40.0, -90.0)
+    add_node(client, cid, hid, "landing_zone", 1, 40.000550, -90.0)       # corner
+    add_node(client, cid, hid, "basket", 2, 40.000550, -89.999282)        # east of corner
+    client.post(f"/courses/{cid}/holes/{hid}/edges/rebuild")
+    # trees on the hypotenuse, well clear of the corner route
+    client.post(f"/courses/{cid}/holes/{hid}/hazards", json={
+        "hazard_type": "trees",
+        "polygon": [
+            [40.000200, -89.999750],
+            [40.000200, -89.999550],
+            [40.000380, -89.999550],
+            [40.000380, -89.999750]
+        ]
+    })
+    return cid, hid
+
+
+def test_safe_and_balanced_follow_dogleg_around_trees(client):
+    add_disc(client)
+    cid, hid = _dogleg_with_trees(client)
+    for mode in ("conservative", "balanced"):
+        path = client.get(f"/courses/{cid}/holes/{hid}/path?mode={mode}").json()
+        recs = path["recommendations"]
+        # two throws: tee → corner → basket; never the straight cut
+        assert len(recs) == 2, f"{mode} should follow the fairway"
+        assert all(r["hazards"] == [] for r in recs)
+
+
+def test_aggressive_may_cut_but_gets_warned(client):
+    add_disc(client)
+    cid, hid = _dogleg_with_trees(client)
+    path = client.get(f"/courses/{cid}/holes/{hid}/path?mode=aggressive").json()
+    recs = path["recommendations"]
+    assert len(recs) == 1  # send it: straight at the pin
+    assert "trees" in recs[0]["hazards"]  # ...but it tells you what you're hitting

@@ -351,6 +351,11 @@ async def get_path(
         style_distances=style_distances,
         hand=hand,
         style_priority=style_priority,
+        hazard_polygons=[
+            (h.hazard_type, hazard_polygon(h))
+            for h in hole.hole_hazards
+            if len(hazard_polygon(h)) >= 3
+        ],
     )
 
     return HolePathResponse(

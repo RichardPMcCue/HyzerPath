@@ -2,7 +2,13 @@ import math
 from pydantic import BaseModel
 from typing import Optional
 
-from app.utils import haversine_feet, bearing_between, angle_diff
+from app.utils import (
+    haversine_feet,
+    bearing_between,
+    angle_diff,
+    point_to_segment_distance,
+    segment_crosses_polygon,
+)
 
 # Tuning constants
 HEADWIND_FT_PER_MPH = 3.0      # distance lost per mph of headwind
@@ -20,6 +26,15 @@ MODE_FACTORS = {
 
 PUTT_RANGE_FT = 40.0       # ~C1: just putt the damn thing
 DRIVE_FRACTION = 0.8       # segments near full reach are drives
+
+# How far a skip-ahead throw line may stray from the mapped fairway waypoints
+# before the jump is disallowed. Send-it mode may cut any corner; safe mode
+# basically has to follow the corridor.
+CORRIDOR_DEVIATION_FT = {
+    "conservative": 35.0,
+    "balanced": 80.0,
+    "aggressive": float("inf"),
+}
 
 # Placement and approach shots reward control: penalize disc speed since the
 # goal is landing close (C1), not covering distance.
@@ -183,6 +198,35 @@ def flatten_style_distances(style_distances: dict) -> dict:
     return flat
 
 
+def _jump_corridor_deviation(path_nodes: list, i: int, j: int) -> Optional[float]:
+    """How far the straight line i→j strays from the skipped fairway waypoints
+    (max point-to-line distance, feet). None if GPS is missing."""
+    a, b = path_nodes[i], path_nodes[j]
+    if not _node_has_gps(a) or not _node_has_gps(b):
+        return None
+    deviation = 0.0
+    for k in range(i + 1, j):
+        n = path_nodes[k]
+        if _node_has_gps(n):
+            deviation = max(deviation, point_to_segment_distance(
+                n.latitude, n.longitude,
+                a.latitude, a.longitude,
+                b.latitude, b.longitude,
+            ))
+    return deviation
+
+
+def _jump_crosses_hazard(path_nodes: list, i: int, j: int, hazard_polygons: list) -> list[str]:
+    """Hazard types whose polygon the straight throw line i→j enters."""
+    a, b = path_nodes[i], path_nodes[j]
+    if not _node_has_gps(a) or not _node_has_gps(b) or not hazard_polygons:
+        return []
+    return [
+        hazard_type for hazard_type, polygon in hazard_polygons
+        if segment_crosses_polygon(a.latitude, a.longitude, b.latitude, b.longitude, polygon)
+    ]
+
+
 def plan_segments(
     path_nodes: list,
     edge_lookup: dict,
@@ -190,13 +234,15 @@ def plan_segments(
     mode: str,
     wind_speed: float = 0.0,
     wind_from_deg: Optional[float] = None,
+    hazard_polygons: Optional[list] = None,  # [(hazard_type, [[lat, lng], ...])]
 ) -> list[tuple[int, int]]:
     """Lookahead/pruning: walk the Dijkstra path and greedily jump to the furthest
     node reachable in one throw (wind-adjusted). Returns (from_index, to_index) pairs.
 
-    conservative: never skips past an edge with hazards
-    balanced: skips, but only well within reach (95% of limit)
-    aggressive: skips anything within reach"""
+    conservative: follows the corridor (≤35 ft cut), never crosses hazards
+    balanced: small corner cuts (≤80 ft), never crosses hazards, 95% of reach
+    aggressive: cuts anything within reach, hazards be damned"""
+    hazard_polygons = hazard_polygons or []
     segments = []
     i = 0
     last = len(path_nodes) - 1
@@ -221,6 +267,13 @@ def plan_segments(
                 limit *= 0.95
             if dist > limit:
                 continue
+            # The jump is a straight throw: it must respect the mapped fairway
+            # (per-mode corner-cut tolerance) and not fly through drawn hazards
+            deviation = _jump_corridor_deviation(path_nodes, i, j)
+            if deviation is not None and deviation > CORRIDOR_DEVIATION_FT.get(mode, 80.0):
+                continue
+            if mode != "aggressive" and _jump_crosses_hazard(path_nodes, i, j, hazard_polygons):
+                continue
             if mode == "conservative" and _hazards_between(path_nodes, i, j, edge_lookup):
                 continue
             best_j = j
@@ -242,6 +295,7 @@ def recommend_path(
     style_distances: Optional[dict] = None,  # {style: {disc_id: avg_distance}}
     hand: str = "right",
     style_priority: Optional[dict] = None,  # {style: 1-based priority, 1 = primary}
+    hazard_polygons: Optional[list] = None,  # [(hazard_type, [[lat, lng], ...])]
 ) -> list[SegmentRecommendation]:
     if len(path_nodes) < 2 or not discs:
         return []
@@ -260,7 +314,9 @@ def recommend_path(
     wind_from_deg = wind_direction_to_degrees(wind_direction)
     reach_limit = player_reach(discs, disc_distances, disc_max_distances, mode)
 
-    segments = plan_segments(path_nodes, edge_lookup, reach_limit, mode, wind_speed, wind_from_deg)
+    segments = plan_segments(
+        path_nodes, edge_lookup, reach_limit, mode, wind_speed, wind_from_deg, hazard_polygons
+    )
     recommendations = []
 
     for seg_idx, (i, j) in enumerate(segments):
@@ -341,7 +397,12 @@ def recommend_path(
             throw_type=throw_type,
             from_node_id=from_node.hole_node_id,
             to_node_id=to_node.hole_node_id,
-            hazards=_hazards_between(path_nodes, i, j, edge_lookup),
+            # Edge-tagged hazards plus any polygons the actual throw line enters
+            # (a send-it corner cut earns its ⚠ even when the path edges are clean)
+            hazards=list(dict.fromkeys(
+                _hazards_between(path_nodes, i, j, edge_lookup)
+                + _jump_crosses_hazard(path_nodes, i, j, hazard_polygons or [])
+            )),
             skipped_node_ids=[path_nodes[k].hole_node_id for k in range(i + 1, j)],
         ))
 
