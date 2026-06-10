@@ -73,6 +73,65 @@ def test_search_discs(mock_client, client):
     assert len(discs) == 1
     assert discs[0]["name"] == "Buzzz"
     assert discs[0]["disc_type"] == "midrange"
+
+
+@patch("app.routers.bag.httpx.AsyncClient")
+def test_search_serves_from_cache_on_second_hit(mock_client, client):
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = [
+        {
+            "id": "5ef55b98-6270-5046-b0e2-bbe5875a1756",
+            "name": "Tempo",
+            "brand": "Axiom Discs",
+            "category": "Approach Discs",
+            "speed": "4",
+            "glide": "4",
+            "turn": "0",
+            "fade": "2.5",
+            "stability": "Very Overstable",
+            "link": "",
+            "pic": "",
+            "color": "#000000",
+            "background_color": "#FF9595",
+        }
+    ]
+    get_mock = AsyncMock(return_value=mock_response)
+    mock_client.return_value.__aenter__.return_value.get = get_mock
+
+    # First search: cache miss → external API → cached
+    first = client.get("/bag/discs/search?name=tempo").json()
+    assert first[0]["disc_type"] == "putter"  # "Approach Discs" maps to putter
+    assert get_mock.call_count == 1
+
+    # Second search: served from the catalog, no API call
+    second = client.get("/bag/discs/search?name=tempo").json()
+    assert second[0]["name"] == "Tempo"
+    assert second[0]["disc_type"] == "putter"
+    assert get_mock.call_count == 1
+
+
+def test_create_disc_without_type_infers_from_speed(client):
+    # Approach-style disc with no type: must not 500 (disc_type is NOT NULL)
+    r = client.post("/bag/discs", json={
+        "name": "Groundhog",
+        "manufacturer": "Elevation Disc Golf",
+        "disc_type": None,
+        "speed": 1.0,
+        "glide": 1.0,
+        "turn": 0.0,
+        "fade": 2.0
+    })
+    assert r.status_code == 200
+    assert r.json()["disc_type"] == "putter"
+
+    r2 = client.post("/bag/discs", json={
+        "name": "Mystery Driver",
+        "manufacturer": "Unknown",
+        "speed": 12.0
+    })
+    assert r2.status_code == 200
+    assert r2.json()["disc_type"] == "distance_driver"
 def test_upsert_and_get_disc_stats(client):
     create = client.post("/bag/discs", json={
         "name": "Destroyer",

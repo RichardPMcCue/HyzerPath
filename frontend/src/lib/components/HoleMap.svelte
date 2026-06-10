@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import maplibregl from 'maplibre-gl';
 	import type { Feature, FeatureCollection } from 'geojson';
+	import { satelliteStyle } from '$lib/map';
 	import type { HoleNode, SegmentRecommendation } from '$lib/types';
 
 	let {
@@ -109,22 +110,7 @@
 
 		map = new maplibregl.Map({
 			container,
-			style: {
-				version: 8,
-				sources: {
-					satellite: {
-						type: 'raster',
-						tiles: [
-							'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-						],
-						tileSize: 256,
-						// Esri imagery runs out around z19; upscale instead of blank tiles
-						maxzoom: 19,
-						attribution: 'Esri'
-					}
-				},
-				layers: [{ id: 'satellite', type: 'raster', source: 'satellite' }]
-			},
+			style: satelliteStyle(),
 			bounds,
 			fitBoundsOptions: { padding: 48 },
 			attributionControl: false

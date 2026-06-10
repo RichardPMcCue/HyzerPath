@@ -129,6 +129,28 @@ class BagDisc(Base):
     disc = relationship("Disc", back_populates="bag_discs")
 
 
+class DiscCatalog(Base):
+    """Local cache of DiscIt search results: search here first, only hit the
+    external API on a miss so we stay friendly with their rate limits."""
+    __tablename__ = "disc_catalog"
+
+    catalog_id = Column(Integer, primary_key=True)
+    discit_id = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    brand = Column(String)
+    category = Column(String)
+    speed = Column(String)
+    glide = Column(String)
+    turn = Column(String)
+    fade = Column(String)
+    stability = Column(String)
+    link = Column(String)
+    pic = Column(String)
+    color = Column(String)
+    background_color = Column(String)
+    fetched_at = Column(DateTime, default=utcnow, nullable=False)
+
+
 class Disc(Base):
     __tablename__ = "discs"
 

@@ -2,15 +2,38 @@ import math
 from typing import Optional
 from app.schemas import DiscType
 
-def map_discit_category(category: str) -> Optional[DiscType]:
-    mapping = {
-        "Distance Driver": DiscType.distance_driver,
-        "Hybrid Driver": DiscType.fairway_driver,
-        "Control Driver": DiscType.fairway_driver,
-        "Midrange": DiscType.midrange,
-        "Putter": DiscType.putter
-    }
-    return mapping.get(category)
+def map_discit_category(category: str, speed: Optional[float] = None) -> Optional[DiscType]:
+    """Fuzzy-map a DiscIt category to our disc type.
+
+    DiscIt category names vary ("Putter", "Putt & Approach", "Approach Discs",
+    "Distance Drivers", ...), so match on keywords and fall back to inferring
+    from speed — discs.disc_type is NOT NULL, an unmapped type breaks adds.
+    """
+    c = (category or "").lower()
+    if "putt" in c or "approach" in c:
+        return DiscType.putter
+    if "mid" in c:
+        return DiscType.midrange
+    if "distance" in c:
+        return DiscType.distance_driver
+    if "control" in c or "hybrid" in c or "fairway" in c or "driver" in c:
+        return DiscType.fairway_driver
+    if speed is not None:
+        if speed >= 9:
+            return DiscType.distance_driver
+        if speed >= 6:
+            return DiscType.fairway_driver
+        if speed >= 4:
+            return DiscType.midrange
+        return DiscType.putter
+    return None
+
+
+def parse_float(value) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 def haversine_feet(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance between two lat/lon points, in feet."""

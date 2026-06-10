@@ -34,8 +34,11 @@ sw.addEventListener('fetch', (event) => {
 
 	const url = new URL(event.request.url);
 
-	// Never cache API calls or map tiles — always go to the network
+	// Never cache API calls or map tiles — always go to the network.
+	// /tiles/ and /api/ are same-origin (proxied by nginx) but shouldn't
+	// fill the app-shell cache.
 	if (url.origin !== sw.location.origin) return;
+	if (url.pathname.startsWith('/tiles/') || url.pathname.startsWith('/api/')) return;
 
 	event.respondWith(
 		(async () => {

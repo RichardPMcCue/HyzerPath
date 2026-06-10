@@ -3,6 +3,7 @@
 	import maplibregl from 'maplibre-gl';
 	import type { FeatureCollection } from 'geojson';
 	import { api } from '$lib/api';
+	import { satelliteStyle } from '$lib/map';
 	import type { Disc, ThrowMeasurement, ThrowSession } from '$lib/types';
 
 	let mapContainer: HTMLDivElement | undefined = $state();
@@ -44,24 +45,7 @@
 		// Render the map immediately — never block on the GPS permission prompt
 		map = new maplibregl.Map({
 			container: mapContainer,
-			style: {
-				version: 8,
-				sources: {
-					satellite: {
-						type: 'raster',
-						tiles: [
-							'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-						],
-						tileSize: 256,
-						// Esri imagery runs out around z19 in many areas; without this
-						// MapLibre requests missing tiles and renders blank instead of
-						// upscaling the deepest available zoom.
-						maxzoom: 19,
-						attribution: 'Esri'
-					}
-				},
-				layers: [{ id: 'satellite', type: 'raster', source: 'satellite' }]
-			},
+			style: satelliteStyle(),
 			center: [-93.5, 41.9],
 			zoom: 4,
 			attributionControl: false

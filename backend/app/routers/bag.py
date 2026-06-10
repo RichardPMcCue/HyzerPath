@@ -4,37 +4,92 @@ from typing import Optional
 import httpx
 
 from app.database import get_db
-from app.models import BagDisc, Disc, ThrowMeasurement, User, UserDiscStat
+from app.models import BagDisc, Disc, DiscCatalog, ThrowMeasurement, User, UserDiscStat
 from app.schemas import DiscCreate, DiscResponse, DiscUpdate, DiscStatUpsert, DiscStatResponse
-from app.utils import map_discit_category
+from app.utils import map_discit_category, parse_float
 from app.dependencies import get_current_user
 
 DISCIT_API = "https://discit-api.fly.dev/disc"
 
 router = APIRouter(prefix="/bag", tags=["bag"])
 
+
+def catalog_to_result(row: DiscCatalog) -> dict:
+    """Shape a cached catalog row like a DiscIt API result."""
+    return {
+        "id": row.discit_id,
+        "name": row.name,
+        "brand": row.brand,
+        "category": row.category,
+        "speed": row.speed,
+        "glide": row.glide,
+        "turn": row.turn,
+        "fade": row.fade,
+        "stability": row.stability,
+        "link": row.link,
+        "pic": row.pic,
+        "color": row.color,
+        "background_color": row.background_color,
+        "disc_type": map_discit_category(row.category, parse_float(row.speed)),
+    }
+
+
 @router.get("/discs/search")
-async def search_discs(name: Optional[str] = None, brand: Optional[str] = None):
+async def search_discs(
+    name: Optional[str] = None,
+    brand: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
     if name is None and brand is None:
         raise HTTPException(status_code=400, detail="Empty Query")
+
+    # Cache-first: serve from our own catalog and only hit the external
+    # DiscIt API on a miss, so repeated searches don't hammer their service.
+    cache_query = db.query(DiscCatalog)
+    if name:
+        cache_query = cache_query.filter(DiscCatalog.name.ilike(f"%{name}%"))
+    if brand:
+        cache_query = cache_query.filter(DiscCatalog.brand.ilike(f"%{brand}%"))
+    cached = cache_query.order_by(DiscCatalog.name).limit(25).all()
+    if cached:
+        return [catalog_to_result(row) for row in cached]
+
     params = {}
     if name:
         params["name"] = name
     if brand:
         params["brand"] = brand
-    
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(DISCIT_API, params=params, timeout=10)
             response.raise_for_status()
             discs = response.json()
-            for disc in discs:
-                disc["disc_type"] = map_discit_category(disc["category"])
-            return discs
-
     except Exception as e:
         print(f"Unexpected error: {e}")
         raise HTTPException(status_code=503, detail="External API call failed")
+
+    for disc in discs:
+        disc["disc_type"] = map_discit_category(disc["category"], parse_float(disc.get("speed")))
+
+    # Upsert results into the catalog for next time
+    catalog_fields = (
+        "name", "brand", "category", "speed", "glide", "turn", "fade",
+        "stability", "link", "pic", "color", "background_color",
+    )
+    for disc in discs:
+        discit_id = disc.get("id")
+        if not discit_id or not disc.get("name"):
+            continue
+        row = db.query(DiscCatalog).filter(DiscCatalog.discit_id == discit_id).first()
+        if row is None:
+            row = DiscCatalog(discit_id=discit_id)
+            db.add(row)
+        for field in catalog_fields:
+            setattr(row, field, disc.get(field))
+    db.commit()
+
+    return discs
 
 
 @router.get("/discs", response_model=list[DiscResponse])
@@ -46,6 +101,9 @@ async def get_discs(db: Session = Depends(get_db), current_user: User = Depends(
 @router.post("/discs", response_model=DiscResponse)
 async def create_disc(disc_in: DiscCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     disc_dict = disc_in.model_dump()
+    # disc_type is NOT NULL in the DB — infer from speed rather than 500
+    if disc_dict.get("disc_type") is None:
+        disc_dict["disc_type"] = map_discit_category("", disc_dict.get("speed")) or "putter"
     db_disc = Disc(
         user_id=current_user.user_id,
          **disc_dict

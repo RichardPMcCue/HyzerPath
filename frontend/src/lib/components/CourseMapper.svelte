@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import maplibregl from 'maplibre-gl';
 	import type { FeatureCollection } from 'geojson';
+	import { satelliteStyle } from '$lib/map';
 	import type { MapperHole } from '$lib/types';
 	import { haversineFeet } from '$lib/geo';
 
@@ -172,22 +173,7 @@
 		if (!mapContainer) return;
 		map = new maplibregl.Map({
 			container: mapContainer,
-			style: {
-				version: 8,
-				sources: {
-					satellite: {
-						type: 'raster',
-						tiles: [
-							'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-						],
-						tileSize: 256,
-						// Esri imagery runs out around z19; upscale instead of blank tiles
-						maxzoom: 19,
-						attribution: 'Esri'
-					}
-				},
-				layers: [{ id: 'satellite', type: 'raster', source: 'satellite' }]
-			},
+			style: satelliteStyle(),
 			center: [-93.5, 41.9],
 			zoom: 4,
 			attributionControl: false
