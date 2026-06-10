@@ -190,6 +190,21 @@
 		{/if}
 	</div>
 
+	{#if auth.isAdmin}
+		<a
+			href="/admin/users"
+			class="flex items-center justify-between rounded-2xl border border-edge bg-card p-4 transition active:scale-[0.98]"
+		>
+			<div>
+				<p class="text-sm font-semibold">Manage users</p>
+				<p class="mt-0.5 text-xs text-ink-dim">Grant or revoke admin access</p>
+			</div>
+			<svg class="h-4 w-4 text-ink-dim" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+			</svg>
+		</a>
+	{/if}
+
 	<button
 		class="w-full rounded-2xl border border-red-900/60 bg-red-950/40 py-3 text-sm font-semibold text-red-300 transition active:scale-[0.98]"
 		onclick={logout}

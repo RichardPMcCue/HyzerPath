@@ -100,6 +100,12 @@ export const api = {
 	getMe: () => request<Me>('/auth/me'),
 	updateMe: (update: { username: string }) =>
 		request<Me>('/auth/me', { method: 'PATCH', body: JSON.stringify(update) }),
+	listUsers: () => request<Me[]>('/auth/users'),
+	setUserAdmin: (userId: number, isAdmin: boolean) =>
+		request<Me>(`/auth/users/${userId}`, {
+			method: 'PATCH',
+			body: JSON.stringify({ is_admin: isAdmin })
+		}),
 
 	// --- courses ---
 	getCourses: () => request<Course[]>('/courses'),

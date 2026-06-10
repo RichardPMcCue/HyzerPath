@@ -8,7 +8,7 @@ from jose import jwt
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_current_admin
 from app.models import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -53,6 +53,38 @@ async def update_me(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+class UserAdminUpdate(BaseModel):
+    is_admin: bool
+
+
+@router.get("/users", response_model=list[MeResponse])
+async def list_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
+):
+    return db.query(User).order_by(User.user_id).all()
+
+
+@router.patch("/users/{user_id}", response_model=MeResponse)
+async def set_user_admin(
+    user_id: int,
+    update: UserAdminUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
+):
+    if user_id == current_user.user_id and not update.is_admin:
+        raise HTTPException(status_code=400, detail="You cannot remove your own admin access")
+
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_admin = update.is_admin
+    db.commit()
+    db.refresh(user)
+    return user
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
