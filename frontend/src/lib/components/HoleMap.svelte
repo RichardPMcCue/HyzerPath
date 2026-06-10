@@ -26,6 +26,7 @@
 	let container = $state<HTMLDivElement>()!;
 	let map: maplibregl.Map | null = null;
 	let loaded = $state(false);
+	let fittedNodesKey = '';
 
 	const gpsNodes = $derived(nodes.filter((n) => n.latitude !== null && n.longitude !== null));
 
@@ -101,6 +102,16 @@
 	function render() {
 		if (!map || !loaded) return;
 
+		// New hole (or new lie) → re-frame the camera to fit it. Scorecards keep
+		// this component mounted across holes, so mount-time bounds go stale.
+		const nodesKey = gpsNodes.map((n) => n.hole_node_id).join(',');
+		if (nodesKey !== fittedNodesKey && gpsNodes.length >= 2) {
+			fittedNodesKey = nodesKey;
+			const bounds = new maplibregl.LngLatBounds();
+			for (const n of gpsNodes) bounds.extend([n.longitude!, n.latitude!]);
+			map.fitBounds(bounds, { padding: 48, maxZoom: 19 });
+		}
+
 		const fairwaySource = map.getSource('fairway') as maplibregl.GeoJSONSource | undefined;
 		if (fairwaySource) fairwaySource.setData(fairwayGeoJSON());
 
@@ -132,6 +143,7 @@
 	onMount(() => {
 		if (gpsNodes.length < 2) return;
 
+		fittedNodesKey = gpsNodes.map((n) => n.hole_node_id).join(',');
 		const bounds = new maplibregl.LngLatBounds();
 		for (const n of gpsNodes) bounds.extend([n.longitude!, n.latitude!]);
 
