@@ -35,6 +35,7 @@ class RoundResponse(BaseModel):
 class RoundThrowCreate(BaseModel):
     throw_number: int
     disc_id: Optional[int] = None
+    throw_style: Optional[str] = None  # 'backhand' | 'forehand'
     start_latitude: Optional[float] = None
     start_longitude: Optional[float] = None
     end_latitude: Optional[float] = None
@@ -52,6 +53,7 @@ class RoundThrowResponse(BaseModel):
     hole_id: int
     throw_number: int
     disc_id: Optional[int] = None
+    throw_style: Optional[str] = None
     distance_ft: Optional[float] = None
     landing_zone: Optional[str] = None
     drop_zone: Optional[str] = None

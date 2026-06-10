@@ -47,11 +47,18 @@ class SegmentRecommendation(BaseModel):
     distance: int
     effective_distance: int
     shot_shape: str
+    throw_style: str = "backhand"  # backhand | forehand
     throw_type: str = "drive"  # drive | placement | approach | putt
     from_node_id: int
     to_node_id: int
     hazards: list[str]
     skipped_node_ids: list[int] = []
+
+
+def style_finishes_left(hand: str, style: str) -> bool:
+    """Which way the disc fades at the end of its flight: RHBH and LHFH finish
+    left; RHFH and LHBH finish right."""
+    return (hand == "right") == (style == "backhand")
 
 
 def wind_direction_to_degrees(direction) -> Optional[float]:
@@ -166,6 +173,16 @@ def player_reach(discs: list, disc_distances: dict, disc_max_distances: dict, mo
     return best_avg * MODE_FACTORS.get(mode, 1.0)
 
 
+def flatten_style_distances(style_distances: dict) -> dict:
+    """Collapse {style: {disc_id: dist}} to {disc_id: best dist across styles}."""
+    flat: dict = {}
+    for distances in style_distances.values():
+        for disc_id, dist in distances.items():
+            if dist and dist > (flat.get(disc_id) or 0):
+                flat[disc_id] = dist
+    return flat
+
+
 def plan_segments(
     path_nodes: list,
     edge_lookup: dict,
@@ -217,16 +234,29 @@ def recommend_path(
     path_nodes: list,
     edge_lookup: dict,  # {(from_node_id, to_node_id): HoleEdge}
     discs: list,
-    disc_distances: dict,  # {disc_id: avg_distance}
+    disc_distances: dict,  # {disc_id: avg_distance} — best across styles
     disc_max_distances: Optional[dict] = None,  # {disc_id: max_distance}
     wind_speed: float = 0.0,
     wind_direction=None,  # compass string or degrees, wind FROM
     mode: str = "balanced",
+    style_distances: Optional[dict] = None,  # {style: {disc_id: avg_distance}}
+    hand: str = "right",
+    style_priority: Optional[dict] = None,  # {style: 1-based priority, 1 = primary}
 ) -> list[SegmentRecommendation]:
     if len(path_nodes) < 2 or not discs:
         return []
 
     disc_max_distances = disc_max_distances or {}
+    # Without per-style data, everything counts as backhand (legacy behavior)
+    if not style_distances:
+        style_distances = {"backhand": disc_distances}
+    style_priority = style_priority or {}
+    # Only consider styles the player actually has distance data for
+    styles = [s for s, d in style_distances.items() if any(v for v in d.values())]
+    if not styles:
+        styles = ["backhand"]
+        style_distances = {"backhand": disc_distances}
+
     wind_from_deg = wind_direction_to_degrees(wind_direction)
     reach_limit = player_reach(discs, disc_distances, disc_max_distances, mode)
 
@@ -262,25 +292,44 @@ def recommend_path(
         headwind, crosswind = wind_components(wind_speed, wind_from_deg, throw_bearing)
         finish_deg_adjusted = finish_deg + CROSSWIND_DRIFT_DEG_PER_MPH * crosswind
 
-        shot_shape = derive_shot_shape(finish_deg_adjusted)
-        # Desired net stability: a left finish (negative deg) wants fade
-        desired_stability = max(-3.0, min(4.0, -finish_deg_adjusted / 15.0))
-
         throw_type = classify_throw(distance, is_final=(seg_idx == len(segments) - 1), reach=reach_limit)
 
-        # Filter discs whose wind-adjusted carry covers the segment
-        def carry(d):
-            base = disc_distances.get(d.disc_id, 0) or 0
-            return effective_throw_distance(base, headwind)
+        # Evaluate every (style, disc) pair: forehand mirrors the shape math, so
+        # a dogleg that needs a flex backhand is a simple hyzer forehand. Use the
+        # player's measured distances for that style.
+        best = None  # (score, disc, style, shot_shape)
+        for style in styles:
+            distances = style_distances.get(style, {})
+            if not any(distances.values()):
+                continue
 
-        capable = [d for d in discs if carry(d) >= distance - REACH_TOLERANCE_FT]
-        if not capable:
-            capable = [max(discs, key=carry)]
+            # Normalize the finish angle to this style's fade direction:
+            # negative = "hyzer side" regardless of hand/style
+            normalized = finish_deg_adjusted if style_finishes_left(hand, style) else -finish_deg_adjusted
+            shot_shape_s = derive_shot_shape(normalized)
+            desired_stability = max(-3.0, min(4.0, -normalized / 15.0))
 
-        best_disc = max(
-            capable,
-            key=lambda d: score_disc(d, carry(d), distance, desired_stability, throw_type),
-        )
+            def carry(d, _distances=distances):
+                base = _distances.get(d.disc_id, 0) or 0
+                return effective_throw_distance(base, headwind)
+
+            with_data = [d for d in discs if distances.get(d.disc_id)]
+            if not with_data:
+                continue
+            capable = [d for d in with_data if carry(d) >= distance - REACH_TOLERANCE_FT]
+            if not capable:
+                capable = [max(with_data, key=carry)]
+
+            # Primary style wins ties; big shapes for the off-hand cost more
+            priority_penalty = 0.15 * (style_priority.get(style, 1) - 1)
+            for d in capable:
+                score = score_disc(d, carry(d), distance, desired_stability, throw_type) - priority_penalty
+                if best is None or score > best[0]:
+                    best = (score, d, style, shot_shape_s)
+
+        if best is None:
+            continue
+        _, best_disc, best_style, shot_shape = best
 
         recommendations.append(SegmentRecommendation(
             disc=f"{best_disc.manufacturer} {best_disc.name}",
@@ -288,6 +337,7 @@ def recommend_path(
             distance=round(distance),
             effective_distance=round(distance + (HEADWIND_FT_PER_MPH * headwind if headwind > 0 else TAILWIND_FT_PER_MPH * headwind)),
             shot_shape=shot_shape,
+            throw_style=best_style,
             throw_type=throw_type,
             from_node_id=from_node.hole_node_id,
             to_node_id=to_node.hole_node_id,

@@ -39,12 +39,14 @@ class DiscStatUpsert(BaseModel):
     avg_distance: int
     max_distance: Optional[int] = None
     sample_size: Optional[int] = None
+    throw_style: str = "backhand"  # 'backhand' | 'forehand'
 
 class DiscStatResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     stat_id: int
     disc_id: int
+    throw_style: str = "backhand"
     avg_distance: int
     max_distance: Optional[int] = None
     sample_size: Optional[int] = None

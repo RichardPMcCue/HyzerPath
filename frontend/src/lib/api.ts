@@ -69,7 +69,10 @@ export const api = {
 
 	// --- throw stats ---
 	getDiscStats: () => request<DiscStat[]>('/bag/stats'),
-	setDiscStat: (discId: number, stat: { avg_distance: number; max_distance?: number | null }) =>
+	setDiscStat: (
+		discId: number,
+		stat: { avg_distance: number; max_distance?: number | null; throw_style?: string }
+	) =>
 		request<DiscStat>(`/bag/discs/${discId}/stats`, {
 			method: 'PUT',
 			body: JSON.stringify(stat)
@@ -88,7 +91,12 @@ export const api = {
 		}),
 	recordThrow: (
 		sessionId: number,
-		throwIn: { end_latitude: number; end_longitude: number; disc_id?: number | null }
+		throwIn: {
+			end_latitude: number;
+			end_longitude: number;
+			disc_id?: number | null;
+			throw_style?: string | null;
+		}
 	) =>
 		request<ThrowMeasurement>(`/throws/sessions/${sessionId}/throws`, {
 			method: 'POST',

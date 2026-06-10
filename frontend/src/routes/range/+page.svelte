@@ -4,7 +4,7 @@
 	import type { FeatureCollection } from 'geojson';
 	import { api } from '$lib/api';
 	import { autoResize, satelliteStyle } from '$lib/map';
-	import type { Disc, ThrowMeasurement, ThrowSession } from '$lib/types';
+	import type { Disc, ThrowMeasurement, ThrowSession, ThrowStyle } from '$lib/types';
 
 	let mapContainer: HTMLDivElement | undefined = $state();
 	let map: maplibregl.Map | null = null;
@@ -18,6 +18,16 @@
 	let busy = $state(false);
 	let saving = $state(false);
 	let gpsAccuracy = $state<number | null>(null);
+
+	// Sticky BH/FH choice: field sessions are usually one style at a time
+	const STYLE_KEY = 'hyzerpath_throw_style';
+	let throwStyle = $state<ThrowStyle>(
+		(localStorage.getItem(STYLE_KEY) as ThrowStyle) === 'forehand' ? 'forehand' : 'backhand'
+	);
+	function setStyle(style: ThrowStyle) {
+		throwStyle = style;
+		localStorage.setItem(STYLE_KEY, style);
+	}
 
 	$effect(() => {
 		api
@@ -167,7 +177,8 @@
 			const t = await api.recordThrow(session.session_id, {
 				end_latitude: pendingEnd.latitude,
 				end_longitude: pendingEnd.longitude,
-				disc_id: discId
+				disc_id: discId,
+				throw_style: throwStyle
 			});
 			throws = [t, ...throws];
 			pendingEnd = null;
@@ -224,7 +235,20 @@
 		<!-- Disc picker sheet after marking an end -->
 		{#if pendingEnd}
 			<div class="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-edge bg-card/95 p-4 backdrop-blur">
-				<p class="text-sm font-semibold">What did you throw?</p>
+				<div class="flex items-center justify-between">
+					<p class="text-sm font-semibold">What did you throw?</p>
+					<div class="flex gap-1 rounded-lg border border-edge p-0.5">
+						{#each [['backhand', 'BH'], ['forehand', 'FH']] as [style, label] (style)}
+							<button
+								class="rounded-md px-2.5 py-1 text-xs font-bold transition active:scale-95
+									{throwStyle === style ? 'bg-accent text-surface' : 'text-ink-dim'}"
+								onclick={() => setStyle(style as ThrowStyle)}
+							>
+								{label}
+							</button>
+						{/each}
+					</div>
+				</div>
 				<div class="mt-2 -mx-1 overflow-x-auto px-1">
 					<div class="flex w-max gap-2">
 						{#each discs as disc (disc.disc_id)}
@@ -294,7 +318,9 @@
 					<div class="flex items-center justify-between rounded-xl border border-edge bg-card px-3 py-2">
 						<p class="text-sm">
 							<span class="font-bold text-accent">{Math.round(t.distance_ft)} ft</span>
-							<span class="text-xs text-ink-dim"> · {discName(t.disc_id)}</span>
+							<span class="text-xs text-ink-dim">
+								· {discName(t.disc_id)}{t.throw_style === 'forehand' ? ' · FH' : ''}
+							</span>
 						</p>
 						<button
 							class="p-1 text-ink-dim transition hover:text-red-400"

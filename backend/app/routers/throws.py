@@ -30,37 +30,44 @@ def _get_session(session_id: int, db: Session, user: User) -> ThrowSession:
 def _sync_disc_stat(disc_id: int, db: Session, user: User) -> None:
     """Recompute UserDiscStat from every measured throw with this disc —
     field-work sessions and live-round throws alike — so the recommendation
-    engine learns automatically."""
+    engine learns automatically. One stat row per throw style: forehand and
+    backhand carry differently (legacy throws with no style count as backhand)."""
     from app.models import Round, RoundThrow
 
-    measured = [d for (d,) in db.query(ThrowMeasurement.distance_ft).join(ThrowSession).filter(
+    measured = db.query(ThrowMeasurement.distance_ft, ThrowMeasurement.throw_style).join(ThrowSession).filter(
         ThrowSession.user_id == user.user_id,
         ThrowMeasurement.disc_id == disc_id,
         ThrowMeasurement.distance_ft.isnot(None),
-    ).all()]
-    round_throws = [d for (d,) in db.query(RoundThrow.distance_ft).join(Round).filter(
+    ).all()
+    round_throws = db.query(RoundThrow.distance_ft, RoundThrow.throw_style).join(Round).filter(
         Round.user_id == user.user_id,
         RoundThrow.disc_id == disc_id,
         RoundThrow.distance_ft.isnot(None),
-    ).all()]
-    distances = measured + round_throws
+    ).all()
 
-    stat = db.query(UserDiscStat).filter(
-        UserDiscStat.user_id == user.user_id,
-        UserDiscStat.disc_id == disc_id
-    ).first()
+    by_style: dict[str, list[float]] = {"backhand": [], "forehand": []}
+    for distance, style in list(measured) + list(round_throws):
+        by_style[style if style in by_style else "backhand"].append(distance)
 
-    if not distances:
-        if stat is not None:
-            db.delete(stat)
-        return
+    for style, distances in by_style.items():
+        stat = db.query(UserDiscStat).filter(
+            UserDiscStat.user_id == user.user_id,
+            UserDiscStat.disc_id == disc_id,
+            UserDiscStat.throw_style == style,
+        ).first()
 
-    if stat is None:
-        stat = UserDiscStat(user_id=user.user_id, disc_id=disc_id)
-        db.add(stat)
-    stat.avg_distance = round(sum(distances) / len(distances))
-    stat.max_distance = round(max(distances))
-    stat.sample_size = len(distances)
+        if not distances:
+            if stat is not None and stat.sample_size:
+                # Only drop rows the sync created; keep manual entries
+                db.delete(stat)
+            continue
+
+        if stat is None:
+            stat = UserDiscStat(user_id=user.user_id, disc_id=disc_id, throw_style=style)
+            db.add(stat)
+        stat.avg_distance = round(sum(distances) / len(distances))
+        stat.max_distance = round(max(distances))
+        stat.sample_size = len(distances)
 
 
 @router.post("/sessions", response_model=ThrowSessionResponse)
@@ -140,6 +147,7 @@ async def record_throw(
     throw = ThrowMeasurement(
         session_id=session.session_id,
         disc_id=throw_in.disc_id,
+        throw_style=throw_in.throw_style,
         end_latitude=throw_in.end_latitude,
         end_longitude=throw_in.end_longitude,
         distance_ft=round(distance, 1),

@@ -1,18 +1,22 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { Disc, DiscItResult, DiscStat } from '$lib/types';
+	import type { Disc, DiscItResult, DiscStat, ThrowStyle } from '$lib/types';
 	import FlightNumbers from '$lib/components/FlightNumbers.svelte';
 	import BagMatrix from '$lib/components/BagMatrix.svelte';
 
 	let view = $state<'list' | 'matrix'>('list');
 	let discs = $state<Disc[] | null>(null);
-	let stats = $state<Map<number, DiscStat>>(new Map());
+	// Keyed by `${disc_id}:${throw_style}` — BH and FH carry differently
+	let stats = $state<Map<string, DiscStat>>(new Map());
 	let error = $state<string | null>(null);
 
 	// disc editor (distances + flight numbers + color)
 	let editingDiscId = $state<number | null>(null);
-	let editAvg = $state('');
-	let editMax = $state('');
+	let editStyle = $state<ThrowStyle>('backhand');
+	let editVals = $state<Record<ThrowStyle, { avg: string; max: string }>>({
+		backhand: { avg: '', max: '' },
+		forehand: { avg: '', max: '' }
+	});
 	let editSpeed = $state('');
 	let editGlide = $state('');
 	let editTurn = $state('');
@@ -35,7 +39,10 @@
 			.catch((e) => (error = e.message));
 		api
 			.getDiscStats()
-			.then((s) => (stats = new Map(s.map((stat) => [stat.disc_id, stat]))))
+			.then(
+				(s) =>
+					(stats = new Map(s.map((stat) => [`${stat.disc_id}:${stat.throw_style}`, stat])))
+			)
 			.catch(() => {});
 	}
 
@@ -44,9 +51,14 @@
 			editingDiscId = null;
 			return;
 		}
-		const stat = stats.get(disc.disc_id);
-		editAvg = stat ? String(stat.avg_distance) : '';
-		editMax = stat?.max_distance ? String(stat.max_distance) : '';
+		for (const style of ['backhand', 'forehand'] as const) {
+			const stat = stats.get(`${disc.disc_id}:${style}`);
+			editVals[style] = {
+				avg: stat ? String(stat.avg_distance) : '',
+				max: stat?.max_distance ? String(stat.max_distance) : ''
+			};
+		}
+		editStyle = 'backhand';
 		editSpeed = disc.speed !== null ? String(disc.speed) : '';
 		editGlide = disc.glide !== null ? String(disc.glide) : '';
 		editTurn = disc.turn !== null ? String(disc.turn) : '';
@@ -66,15 +78,18 @@
 				fade: editFade !== '' ? Number(editFade) : null,
 				color: editColor
 			});
-			// Throw distances (optional)
-			const avg = parseInt(editAvg, 10);
-			if (avg > 0) {
-				const max = parseInt(editMax, 10);
-				const saved = await api.setDiscStat(discId, {
-					avg_distance: avg,
-					max_distance: max > 0 ? max : null
-				});
-				stats = new Map(stats).set(discId, saved);
+			// Throw distances per style (optional)
+			for (const style of ['backhand', 'forehand'] as const) {
+				const avg = parseInt(editVals[style].avg, 10);
+				if (avg > 0) {
+					const max = parseInt(editVals[style].max, 10);
+					const saved = await api.setDiscStat(discId, {
+						avg_distance: avg,
+						max_distance: max > 0 ? max : null,
+						throw_style: style
+					});
+					stats = new Map(stats).set(`${discId}:${style}`, saved);
+				}
 			}
 			editingDiscId = null;
 			loadBag();
@@ -240,7 +255,8 @@
 			</h2>
 			<div class="space-y-2">
 				{#each group.discs as disc (disc.disc_id)}
-					{@const stat = stats.get(disc.disc_id)}
+					{@const bh = stats.get(`${disc.disc_id}:backhand`)}
+					{@const fh = stats.get(`${disc.disc_id}:forehand`)}
 					<div class="rounded-2xl border border-edge bg-card">
 						<button class="flex w-full items-center justify-between p-3.5 text-left" onclick={() => openEditor(disc)}>
 							<div class="flex items-center gap-3">
@@ -251,9 +267,14 @@
 								<div>
 									<p class="text-sm font-semibold">{disc.name}</p>
 									<p class="text-xs text-ink-dim">{disc.manufacturer}</p>
-									{#if stat}
+									{#if bh || fh}
 										<p class="text-xs font-medium text-accent">
-											{stat.avg_distance} ft avg{stat.max_distance ? ` · ${stat.max_distance} max` : ''}
+											{[
+												bh && `BH ${bh.avg_distance}${bh.max_distance ? `/${bh.max_distance}` : ''} ft`,
+												fh && `FH ${fh.avg_distance}${fh.max_distance ? `/${fh.max_distance}` : ''} ft`
+											]
+												.filter(Boolean)
+												.join(' · ')}
 										</p>
 									{:else}
 										<p class="text-xs font-medium text-amber-300">Set throw distance →</p>
@@ -269,13 +290,24 @@
 						</button>
 						{#if editingDiscId === disc.disc_id}
 							<div class="border-t border-edge p-3.5">
-								<div class="flex gap-2">
+								<div class="flex gap-1 rounded-lg border border-edge p-0.5">
+									{#each [['backhand', 'Backhand'], ['forehand', 'Forehand']] as [style, label] (style)}
+										<button
+											class="flex-1 rounded-md py-1.5 text-xs font-bold transition active:scale-95
+												{editStyle === style ? 'bg-accent text-surface' : 'text-ink-dim'}"
+											onclick={() => (editStyle = style as ThrowStyle)}
+										>
+											{label}
+										</button>
+									{/each}
+								</div>
+								<div class="mt-2 flex gap-2">
 									<label class="flex-1 text-xs text-ink-dim">
 										Avg distance (ft)
 										<input
 											type="number"
 											inputmode="numeric"
-											bind:value={editAvg}
+											bind:value={editVals[editStyle].avg}
 											placeholder="300"
 											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
 										/>
@@ -285,7 +317,7 @@
 										<input
 											type="number"
 											inputmode="numeric"
-											bind:value={editMax}
+											bind:value={editVals[editStyle].max}
 											placeholder="optional"
 											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
 										/>

@@ -17,6 +17,7 @@ class ThrowCreate(BaseModel):
     end_latitude: float
     end_longitude: float
     disc_id: Optional[int] = None
+    throw_style: Optional[str] = None  # 'backhand' | 'forehand'
 
 class ThrowResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -24,6 +25,7 @@ class ThrowResponse(BaseModel):
     throw_id: int
     session_id: int
     disc_id: Optional[int] = None
+    throw_style: Optional[str] = None
     end_latitude: float
     end_longitude: float
     distance_ft: float

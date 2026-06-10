@@ -43,14 +43,21 @@
 			</div>
 		</div>
 		{#if !isPutt}
-			<span
-				class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold {shape.classes}"
-			>
-				<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-					<path stroke-linecap="round" stroke-linejoin="round" d={shape.arrow} />
-				</svg>
-				{shape.label}
-			</span>
+			<div class="flex shrink-0 items-center gap-1.5">
+				{#if rec.throw_style === 'forehand'}
+					<span class="rounded-full bg-violet-950 px-2 py-1 text-xs font-bold text-violet-300">
+						FH
+					</span>
+				{/if}
+				<span
+					class="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold {shape.classes}"
+				>
+					<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" d={shape.arrow} />
+					</svg>
+					{shape.label}
+				</span>
+			</div>
 		{/if}
 	</div>
 

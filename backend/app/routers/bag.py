@@ -132,13 +132,19 @@ async def upsert_disc_stat(
     if disc is None:
         raise HTTPException(status_code=404, detail="Disc not found")
 
+    if stat_in.throw_style not in ("backhand", "forehand"):
+        raise HTTPException(status_code=400, detail="throw_style must be backhand or forehand")
+
     stat = db.query(UserDiscStat).filter(
         UserDiscStat.user_id == current_user.user_id,
-        UserDiscStat.disc_id == disc_id
+        UserDiscStat.disc_id == disc_id,
+        UserDiscStat.throw_style == stat_in.throw_style
     ).first()
 
     if stat is None:
-        stat = UserDiscStat(user_id=current_user.user_id, disc_id=disc_id)
+        stat = UserDiscStat(
+            user_id=current_user.user_id, disc_id=disc_id, throw_style=stat_in.throw_style
+        )
         db.add(stat)
 
     stat.avg_distance = stat_in.avg_distance

@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import Course, User, Hole, HoleNode, HoleEdge, HoleHazard, EdgeHazard, Disc, UserDiscStat, Round, RoundHole
+from app.models import Course, User, Hole, HoleNode, HoleEdge, HoleHazard, EdgeHazard, Disc, UserDiscStat, UserThrowStyle, Round, RoundHole
 from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse, HoleNodeCreate, HoleNodeUpdate, HoleEdgeCreate, HazardCreate, HazardResponse
 from app.dependencies import get_current_user, get_current_admin
 from app.graph import dijkstra, compute_edge_weight
-from app.recommendation import SegmentRecommendation, recommend_path, player_reach
+from app.recommendation import SegmentRecommendation, recommend_path, player_reach, flatten_style_distances
 from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence, compute_fairway_polygon, haversine_feet, segment_crosses_polygon
 from app.wind import get_wind
 
@@ -279,9 +279,24 @@ async def get_path(
     disc_stats = db.query(UserDiscStat).filter(
         UserDiscStat.user_id == current_user.user_id
     ).all()
-    disc_distances = {stat.disc_id: stat.avg_distance for stat in disc_stats}
-    disc_max_distances = {stat.disc_id: stat.max_distance for stat in disc_stats}
+    # Per-style distances (forehand vs backhand carry differently)
+    style_distances: dict = {}
+    style_max: dict = {}
+    for stat in disc_stats:
+        style = stat.throw_style or "backhand"
+        style_distances.setdefault(style, {})[stat.disc_id] = stat.avg_distance
+        style_max.setdefault(style, {})[stat.disc_id] = stat.max_distance
+    # Flat best-across-styles dicts drive reach and edge weights
+    disc_distances = flatten_style_distances(style_distances)
+    disc_max_distances = flatten_style_distances(style_max)
     reach = player_reach(discs, disc_distances, disc_max_distances, mode)
+
+    # Hand + style priority from the player's throw style profile
+    style_rows = db.query(UserThrowStyle).filter(
+        UserThrowStyle.user_id == current_user.user_id
+    ).all()
+    hand = style_rows[0].hand if style_rows else "right"
+    style_priority = {r.throw_type: r.priority for r in style_rows}
 
     edge_tuples = [
         (
@@ -333,6 +348,9 @@ async def get_path(
         wind_speed=resolved_wind_speed,
         wind_direction=resolved_wind_direction,
         mode=mode,
+        style_distances=style_distances,
+        hand=hand,
+        style_priority=style_priority,
     )
 
     return HolePathResponse(

@@ -22,9 +22,12 @@ export interface Disc {
 	weight: number | null;
 }
 
+export type ThrowStyle = 'backhand' | 'forehand';
+
 export interface DiscStat {
 	stat_id: number;
 	disc_id: number;
+	throw_style: ThrowStyle;
 	avg_distance: number;
 	max_distance: number | null;
 	sample_size: number | null;
@@ -64,6 +67,7 @@ export interface ThrowMeasurement {
 	throw_id: number;
 	session_id: number;
 	disc_id: number | null;
+	throw_style: ThrowStyle | null;
 	end_latitude: number;
 	end_longitude: number;
 	distance_ft: number;
@@ -188,6 +192,7 @@ export interface SegmentRecommendation {
 	distance: number;
 	effective_distance: number;
 	shot_shape: ShotShape;
+	throw_style: ThrowStyle;
 	throw_type: ThrowType;
 	from_node_id: number;
 	to_node_id: number;
