@@ -16,7 +16,8 @@ import type {
 	RoundHoleScore,
 	RoundStats,
 	ThrowMeasurement,
-	ThrowSession
+	ThrowSession,
+	ThrowStyleRow
 } from '$lib/types';
 
 export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -109,6 +110,12 @@ export const api = {
 	getMe: () => request<Me>('/auth/me'),
 	updateMe: (update: { username: string }) =>
 		request<Me>('/auth/me', { method: 'PATCH', body: JSON.stringify(update) }),
+	getThrowStyles: () => request<ThrowStyleRow[]>('/auth/me/throw-styles'),
+	setThrowStyles: (rows: ThrowStyleRow[]) =>
+		request<ThrowStyleRow[]>('/auth/me/throw-styles', {
+			method: 'PUT',
+			body: JSON.stringify(rows)
+		}),
 	listUsers: () => request<Me[]>('/auth/users'),
 	setUserAdmin: (userId: number, isAdmin: boolean) =>
 		request<Me>(`/auth/users/${userId}`, {

@@ -11,7 +11,7 @@ from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, 
 from app.dependencies import get_current_user, get_current_admin
 from app.graph import dijkstra, compute_edge_weight
 from app.recommendation import SegmentRecommendation, recommend_path, player_reach, flatten_style_distances
-from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence, compute_fairway_polygon, haversine_feet, segment_crosses_polygon
+from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence, compute_fairway_polygon, haversine_feet, segment_crosses_polygon, path_distance_feet
 from app.wind import get_wind
 
 CenterlinePoint = namedtuple("CenterlinePoint", ["latitude", "longitude"])
@@ -32,17 +32,15 @@ def recompute_hole_geometry(db: Session, hole: Hole):
         if a and b and None not in (a.latitude, a.longitude, b.latitude, b.longitude):
             e.distance = round(haversine_feet(a.latitude, a.longitude, b.latitude, b.longitude))
 
-    # Hole length follows the fairway chain (dogleg-aware), falling back to
-    # the straight tee→basket line when there are no waypoints.
+    # Hole length follows the BEST-FIT line down the fairway: waypoints within
+    # normal fairway width don't add length (they define the corridor, not the
+    # walk), but real dogleg corners do.
     chain = [
         n for n in sorted(hole.nodes, key=lambda n: n.sequence)
         if n.is_fairway and n.latitude is not None and n.longitude is not None
     ]
     if len(chain) >= 2 and chain[0].node_type == "tee" and chain[-1].node_type == "basket":
-        hole.distance = round(sum(
-            haversine_feet(a.latitude, a.longitude, b.latitude, b.longitude)
-            for a, b in zip(chain, chain[1:])
-        ))
+        hole.distance = round(path_distance_feet([(n.latitude, n.longitude) for n in chain]))
 
 
 def hazard_polygon(h: HoleHazard) -> list:
@@ -291,12 +289,15 @@ async def get_path(
     disc_max_distances = flatten_style_distances(style_max)
     reach = player_reach(discs, disc_distances, disc_max_distances, mode)
 
-    # Hand + style priority from the player's throw style profile
+    # Throw style profile: which styles are enabled, per-style hand
+    # (ambidextrous support), and preference order
     style_rows = db.query(UserThrowStyle).filter(
         UserThrowStyle.user_id == current_user.user_id
     ).all()
     hand = style_rows[0].hand if style_rows else "right"
     style_priority = {r.throw_type: r.priority for r in style_rows}
+    allowed_styles = [r.throw_type for r in style_rows] or None
+    style_hands = {r.throw_type: r.hand for r in style_rows}
 
     edge_tuples = [
         (
@@ -351,6 +352,8 @@ async def get_path(
         style_distances=style_distances,
         hand=hand,
         style_priority=style_priority,
+        allowed_styles=allowed_styles,
+        style_hands=style_hands,
         hazard_polygons=[
             (h.hazard_type, hazard_polygon(h))
             for h in hole.hole_hazards

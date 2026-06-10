@@ -4,7 +4,7 @@
 	import type { Feature, FeatureCollection } from 'geojson';
 	import { autoResize, satelliteStyle } from '$lib/map';
 	import type { MapperHazard, MapperHole } from '$lib/types';
-	import { haversineFeet, orderFairwayWaypoints } from '$lib/geo';
+	import { chainDistanceFeet, orderFairwayWaypoints } from '$lib/geo';
 
 	let {
 		holes = $bindable(),
@@ -71,12 +71,8 @@
 
 	function holeDistance(h: MapperHole): number | null {
 		if (!h.tee || !h.pin) return null;
-		const chain = holeChain(h);
-		let total = 0;
-		for (let i = 0; i < chain.length - 1; i++) {
-			total += haversineFeet(chain[i].lat, chain[i].lng, chain[i + 1].lat, chain[i + 1].lng);
-		}
-		return Math.round(total);
+		// Best-fit line: corridor-width waypoint scatter doesn't add length
+		return Math.round(chainDistanceFeet(holeChain(h)));
 	}
 
 	function linesGeoJSON(): FeatureCollection {

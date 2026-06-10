@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth.svelte';
 	import { api } from '$lib/api';
-	import type { Course, Round } from '$lib/types';
+	import type { Course, Hand, Round, ThrowStyleRow } from '$lib/types';
 
 	interface TokenPayload {
 		user_id: number;
@@ -102,6 +102,71 @@
 
 	const relLabel = (rel: number) => (rel === 0 ? 'E' : rel > 0 ? `+${rel}` : `${rel}`);
 
+	// --- Throw style profile: which styles the caddie may recommend ---
+	let bhOn = $state(true);
+	let fhOn = $state(true);
+	let bhHand = $state<Hand>('right');
+	let fhHand = $state<Hand>('right');
+	let pref = $state<'backhand' | 'equal' | 'forehand'>('backhand');
+	let stylesLoaded = $state(false);
+	let stylesSaving = $state(false);
+	let stylesSaved = $state(false);
+	let stylesError = $state<string | null>(null);
+
+	$effect(() => {
+		api
+			.getThrowStyles()
+			.then((rows) => {
+				if (rows.length > 0) {
+					const bh = rows.find((r) => r.throw_type === 'backhand');
+					const fh = rows.find((r) => r.throw_type === 'forehand');
+					bhOn = !!bh;
+					fhOn = !!fh;
+					if (bh) bhHand = bh.hand;
+					if (fh) fhHand = fh.hand;
+					if (bh && fh) {
+						pref = bh.priority === fh.priority ? 'equal' : bh.priority < fh.priority ? 'backhand' : 'forehand';
+					}
+				}
+				stylesLoaded = true;
+			})
+			.catch(() => (stylesLoaded = true));
+	});
+
+	async function saveStyles() {
+		if (!bhOn && !fhOn) {
+			stylesError = 'Enable at least one throw style';
+			return;
+		}
+		stylesSaving = true;
+		stylesError = null;
+		stylesSaved = false;
+		try {
+			const rows: ThrowStyleRow[] = [];
+			if (bhOn) {
+				rows.push({
+					throw_type: 'backhand',
+					hand: bhHand,
+					priority: pref === 'forehand' ? 2 : 1
+				});
+			}
+			if (fhOn) {
+				rows.push({
+					throw_type: 'forehand',
+					hand: fhHand,
+					priority: pref === 'backhand' ? 2 : 1
+				});
+			}
+			await api.setThrowStyles(rows);
+			stylesSaved = true;
+			setTimeout(() => (stylesSaved = false), 2000);
+		} catch (e) {
+			stylesError = (e as Error).message;
+		} finally {
+			stylesSaving = false;
+		}
+	}
+
 	function logout() {
 		auth.logout();
 		goto('/login');
@@ -187,6 +252,82 @@
 			</p>
 		{:else}
 			<p class="mt-1 text-sm text-ink-dim">Finish a round to set one.</p>
+		{/if}
+	</div>
+
+	<!-- Throw style profile -->
+	<div class="rounded-2xl border border-edge bg-card p-4">
+		<p class="text-xs tracking-wide text-ink-dim uppercase">Throw styles</p>
+		{#if stylesLoaded}
+			<div class="mt-3 space-y-2.5">
+				{#each [['backhand', 'Backhand'], ['forehand', 'Forehand']] as [style, label] (style)}
+					{@const on = style === 'backhand' ? bhOn : fhOn}
+					{@const hand = style === 'backhand' ? bhHand : fhHand}
+					<div class="flex items-center justify-between gap-2">
+						<button
+							class="flex items-center gap-2.5"
+							onclick={() => {
+								if (style === 'backhand') bhOn = !bhOn;
+								else fhOn = !fhOn;
+							}}
+						>
+							<span
+								class="flex h-5 w-9 items-center rounded-full p-0.5 transition
+									{on ? 'justify-end bg-accent' : 'justify-start bg-card-raised'}"
+							>
+								<span class="h-4 w-4 rounded-full bg-surface"></span>
+							</span>
+							<span class="text-sm font-semibold {on ? '' : 'text-ink-dim'}">{label}</span>
+						</button>
+						{#if on}
+							<div class="flex gap-1 rounded-lg border border-edge p-0.5">
+								{#each [['right', 'RH'], ['left', 'LH']] as [h, hLabel] (h)}
+									<button
+										class="rounded-md px-2.5 py-1 text-xs font-bold transition active:scale-95
+											{hand === h ? 'bg-accent text-surface' : 'text-ink-dim'}"
+										onclick={() => {
+											if (style === 'backhand') bhHand = h as Hand;
+											else fhHand = h as Hand;
+										}}
+									>
+										{hLabel}
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/each}
+
+				{#if bhOn && fhOn}
+					<div>
+						<p class="pt-1 text-xs text-ink-dim">Preference</p>
+						<div class="mt-1.5 flex gap-1 rounded-lg border border-edge p-0.5">
+							{#each [['backhand', 'BH first'], ['equal', 'Equal'], ['forehand', 'FH first']] as [v, label] (v)}
+								<button
+									class="flex-1 rounded-md py-1.5 text-xs font-bold transition active:scale-95
+										{pref === v ? 'bg-accent text-surface' : 'text-ink-dim'}"
+									onclick={() => (pref = v as typeof pref)}
+								>
+									{label}
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				{#if stylesError}
+					<p class="text-xs text-red-400">{stylesError}</p>
+				{/if}
+				<button
+					class="w-full rounded-xl bg-accent py-2.5 text-sm font-bold text-surface transition active:scale-[0.98] disabled:opacity-50"
+					onclick={saveStyles}
+					disabled={stylesSaving}
+				>
+					{stylesSaving ? 'Saving…' : stylesSaved ? '✓ Saved' : 'Save throw styles'}
+				</button>
+			</div>
+		{:else}
+			<div class="mt-3 h-24 animate-pulse rounded-xl bg-card-raised"></div>
 		{/if}
 	</div>
 

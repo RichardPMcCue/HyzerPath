@@ -24,7 +24,7 @@ MODE_FACTORS = {
     "aggressive": 1.0,  # aggressive uses max_distance instead of avg
 }
 
-PUTT_RANGE_FT = 40.0       # ~C1: just putt the damn thing
+PUTT_RANGE_FT = 66.0       # inside C2: putt or jump putt, not an "approach"
 DRIVE_FRACTION = 0.8       # segments near full reach are drives
 
 # How far a skip-ahead throw line may stray from the mapped fairway waypoints
@@ -296,17 +296,24 @@ def recommend_path(
     hand: str = "right",
     style_priority: Optional[dict] = None,  # {style: 1-based priority, 1 = primary}
     hazard_polygons: Optional[list] = None,  # [(hazard_type, [[lat, lng], ...])]
+    allowed_styles: Optional[list] = None,  # restrict to these styles (user profile)
+    style_hands: Optional[dict] = None,  # {style: 'right'|'left'} for ambidextrous players
 ) -> list[SegmentRecommendation]:
     if len(path_nodes) < 2 or not discs:
         return []
 
     disc_max_distances = disc_max_distances or {}
+    style_hands = style_hands or {}
     # Without per-style data, everything counts as backhand (legacy behavior)
     if not style_distances:
         style_distances = {"backhand": disc_distances}
-    style_priority = style_priority or {}
-    # Only consider styles the player actually has distance data for
-    styles = [s for s, d in style_distances.items() if any(v for v in d.values())]
+    # No throw-style profile → assume backhand-primary: ties go to the backhand
+    style_priority = style_priority or {"backhand": 1, "forehand": 2}
+    # Only consider styles the player has distance data for AND has enabled
+    styles = [
+        s for s, d in style_distances.items()
+        if any(v for v in d.values()) and (not allowed_styles or s in allowed_styles)
+    ]
     if not styles:
         styles = ["backhand"]
         style_distances = {"backhand": disc_distances}
@@ -360,8 +367,10 @@ def recommend_path(
                 continue
 
             # Normalize the finish angle to this style's fade direction:
-            # negative = "hyzer side" regardless of hand/style
-            normalized = finish_deg_adjusted if style_finishes_left(hand, style) else -finish_deg_adjusted
+            # negative = "hyzer side" regardless of hand/style. Ambidextrous
+            # players can have a different hand per style.
+            throw_hand = style_hands.get(style, hand)
+            normalized = finish_deg_adjusted if style_finishes_left(throw_hand, style) else -finish_deg_adjusted
             shot_shape_s = derive_shot_shape(normalized)
             desired_stability = max(-3.0, min(4.0, -normalized / 15.0))
 

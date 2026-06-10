@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 from app.database import get_db
 from app.dependencies import get_current_user, get_current_admin
-from app.models import User
+from app.models import User, UserThrowStyle
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -53,6 +53,56 @@ async def update_me(
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+class ThrowStyleRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    throw_type: str  # 'backhand' | 'forehand'
+    hand: str  # 'right' | 'left'
+    priority: int = 1  # 1 = primary; equal priorities = no preference
+
+
+@router.get("/me/throw-styles", response_model=list[ThrowStyleRow])
+async def get_throw_styles(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return db.query(UserThrowStyle).filter(
+        UserThrowStyle.user_id == current_user.user_id
+    ).order_by(UserThrowStyle.priority).all()
+
+
+@router.put("/me/throw-styles", response_model=list[ThrowStyleRow])
+async def set_throw_styles(
+    rows: list[ThrowStyleRow],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not 1 <= len(rows) <= 2:
+        raise HTTPException(status_code=400, detail="Provide one or two throw styles")
+    if len({r.throw_type for r in rows}) != len(rows):
+        raise HTTPException(status_code=400, detail="Duplicate throw style")
+    for r in rows:
+        if r.throw_type not in ("backhand", "forehand"):
+            raise HTTPException(status_code=400, detail="throw_type must be backhand or forehand")
+        if r.hand not in ("right", "left"):
+            raise HTTPException(status_code=400, detail="hand must be right or left")
+
+    db.query(UserThrowStyle).filter(
+        UserThrowStyle.user_id == current_user.user_id
+    ).delete()
+    for r in rows:
+        db.add(UserThrowStyle(
+            user_id=current_user.user_id,
+            throw_type=r.throw_type,
+            hand=r.hand,
+            priority=r.priority,
+        ))
+    db.commit()
+    return db.query(UserThrowStyle).filter(
+        UserThrowStyle.user_id == current_user.user_id
+    ).order_by(UserThrowStyle.priority).all()
 
 
 class UserAdminUpdate(BaseModel):

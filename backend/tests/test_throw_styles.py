@@ -147,3 +147,76 @@ def test_manual_stat_upsert_per_style(client):
     assert client.put(f"/bag/discs/{disc_id}/stats", json={
         "avg_distance": 300, "throw_style": "sidearm"
     }).status_code == 400
+
+
+def test_throw_style_profile_roundtrip(client):
+    rows = client.put("/auth/me/throw-styles", json=[
+        {"throw_type": "backhand", "hand": "right", "priority": 1},
+        {"throw_type": "forehand", "hand": "right", "priority": 2}
+    ]).json()
+    assert len(rows) == 2
+    assert client.get("/auth/me/throw-styles").json()[0]["throw_type"] == "backhand"
+
+    # replace with FH-only lefty
+    rows = client.put("/auth/me/throw-styles", json=[
+        {"throw_type": "forehand", "hand": "left", "priority": 1}
+    ]).json()
+    assert rows == [{"throw_type": "forehand", "hand": "left", "priority": 1}]
+
+
+def test_throw_style_profile_validation(client):
+    assert client.put("/auth/me/throw-styles", json=[]).status_code == 400
+    assert client.put("/auth/me/throw-styles", json=[
+        {"throw_type": "sidearm", "hand": "right", "priority": 1}
+    ]).status_code == 400
+    assert client.put("/auth/me/throw-styles", json=[
+        {"throw_type": "backhand", "hand": "right", "priority": 1},
+        {"throw_type": "backhand", "hand": "left", "priority": 2}
+    ]).status_code == 400
+
+
+def test_disabled_style_never_recommended():
+    nodes = [
+        _node(1, 40.0, -90.0),
+        _node(2, 40.000687, -90.0),
+        _node(3, 40.000687, -89.999103),
+    ]
+    edges = {(1, 2): _edge(1, 2, 250), (2, 3): _edge(2, 3, 250)}
+    disc = _disc(1, "Stable", 9.0, 0.0, 2.0)
+
+    # FH data exists and fits the right dogleg, but the profile is BH-only
+    recs = recommend_path(
+        path_nodes=nodes,
+        edge_lookup=edges,
+        discs=[disc],
+        disc_distances={1: 260},
+        style_distances={"backhand": {1: 260}, "forehand": {1: 260}},
+        hand="right",
+        allowed_styles=["backhand"],
+    )
+    assert all(r.throw_style == "backhand" for r in recs)
+
+
+def test_lefty_backhand_owns_right_dogleg():
+    """LHBH fades right — a right-bending hole is hyzer territory for a lefty
+    backhand, no forehand needed."""
+    nodes = [
+        _node(1, 40.0, -90.0),
+        _node(2, 40.000687, -90.0),
+        _node(3, 40.000687, -89.999103),
+    ]
+    edges = {(1, 2): _edge(1, 2, 250), (2, 3): _edge(2, 3, 250)}
+    disc = _disc(1, "Stable", 9.0, 0.0, 2.0)
+
+    recs = recommend_path(
+        path_nodes=nodes,
+        edge_lookup=edges,
+        discs=[disc],
+        disc_distances={1: 260},
+        style_distances={"backhand": {1: 260}},
+        hand="left",
+        style_hands={"backhand": "left"},
+        allowed_styles=["backhand"],
+    )
+    assert recs[0].throw_style == "backhand"
+    assert recs[0].shot_shape in ("hyzer", "spike_hyzer")

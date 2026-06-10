@@ -251,3 +251,34 @@ def segment_crosses_polygon(a_lat, a_lon, b_lat, b_lon, polygon: list) -> bool:
         if _segments_intersect((a_lat, a_lon), (b_lat, b_lon), p3, p4):
             return True
     return False
+
+
+FAIRWAY_FIT_TOLERANCE_FT = 40.0
+
+
+def simplify_path(points: list, tolerance_ft: float = FAIRWAY_FIT_TOLERANCE_FT) -> list:
+    """Douglas-Peucker on a chain of (lat, lng) points: drops points within
+    tolerance of the line so played distance follows the best-fit fairway line,
+    not every lateral waypoint tap. Real dogleg corners survive."""
+    if len(points) < 3:
+        return list(points)
+    a, b = points[0], points[-1]
+    max_idx, max_dev = 0, 0.0
+    for i in range(1, len(points) - 1):
+        dev = point_to_segment_distance(points[i][0], points[i][1], a[0], a[1], b[0], b[1])
+        if dev > max_dev:
+            max_idx, max_dev = i, dev
+    if max_dev <= tolerance_ft:
+        return [a, b]
+    left = simplify_path(points[:max_idx + 1], tolerance_ft)
+    right = simplify_path(points[max_idx:], tolerance_ft)
+    return left[:-1] + right
+
+
+def path_distance_feet(points: list, tolerance_ft: float = FAIRWAY_FIT_TOLERANCE_FT) -> float:
+    """Length of the best-fit line through a chain of (lat, lng) points."""
+    simplified = simplify_path(points, tolerance_ft)
+    return sum(
+        haversine_feet(a[0], a[1], b[0], b[1])
+        for a, b in zip(simplified, simplified[1:])
+    )

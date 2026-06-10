@@ -1,5 +1,60 @@
 type Pt = { lat: number; lng: number };
 
+/** Distance in feet from a point to a segment (local planar projection). */
+export function pointToSegmentFeet(p: Pt, a: Pt, b: Pt): number {
+	const latFt = 364000;
+	const lonFt = 364000 * Math.cos((p.lat * Math.PI) / 180);
+	const px = (p.lng - a.lng) * lonFt;
+	const py = (p.lat - a.lat) * latFt;
+	const dx = (b.lng - a.lng) * lonFt;
+	const dy = (b.lat - a.lat) * latFt;
+	const len2 = dx * dx + dy * dy;
+	if (len2 === 0) return Math.hypot(px, py);
+	const t = Math.max(0, Math.min(1, (px * dx + py * dy) / len2));
+	return Math.hypot(t * dx - px, t * dy - py);
+}
+
+export const FAIRWAY_FIT_TOLERANCE_FT = 40;
+
+/** Douglas-Peucker: drop points within tolerance of the line so distance
+ *  follows the best-fit fairway line, not every lateral waypoint tap. */
+export function simplifyChain<T extends Pt>(
+	points: T[],
+	toleranceFt: number = FAIRWAY_FIT_TOLERANCE_FT
+): T[] {
+	if (points.length < 3) return [...points];
+	const a = points[0];
+	const b = points[points.length - 1];
+	let maxIdx = 0;
+	let maxDev = 0;
+	for (let i = 1; i < points.length - 1; i++) {
+		const dev = pointToSegmentFeet(points[i], a, b);
+		if (dev > maxDev) {
+			maxIdx = i;
+			maxDev = dev;
+		}
+	}
+	if (maxDev <= toleranceFt) return [a, b];
+	const left = simplifyChain(points.slice(0, maxIdx + 1), toleranceFt);
+	const right = simplifyChain(points.slice(maxIdx), toleranceFt);
+	return [...left.slice(0, -1), ...right];
+}
+
+/** Length in feet of the best-fit line through a chain of points. */
+export function chainDistanceFeet(points: Pt[], toleranceFt?: number): number {
+	const simplified = simplifyChain(points, toleranceFt);
+	let total = 0;
+	for (let i = 0; i < simplified.length - 1; i++) {
+		total += haversineFeet(
+			simplified[i].lat,
+			simplified[i].lng,
+			simplified[i + 1].lat,
+			simplified[i + 1].lng
+		);
+	}
+	return total;
+}
+
 /**
  * Order fairway waypoints into the best-fit chain from tee to pin so the
  * corridor never doubles back, regardless of the order they were tapped.

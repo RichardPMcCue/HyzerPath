@@ -21,6 +21,8 @@
 		putt: 'Putt'
 	};
 	const isPutt = $derived(rec.throw_type === 'putt');
+	// Inside C1 it's a putt; C1–C2 (33–66 ft) is a jump putt
+	const isJumpPutt = $derived(isPutt && rec.distance > 35);
 </script>
 
 <div class="rounded-2xl border border-edge bg-card p-4">
@@ -32,7 +34,9 @@
 				{index + 1}
 			</span>
 			<div>
-				<p class="font-semibold">{isPutt ? 'Just putt it 🎯' : rec.disc}</p>
+				<p class="font-semibold">
+					{isPutt ? (isJumpPutt ? 'Jump putt 🎯' : 'Just putt it 🎯') : rec.disc}
+				</p>
 				<p class="text-xs text-ink-dim">
 					<span class="font-medium text-ink">{throwTypeLabel[rec.throw_type] ?? 'Drive'}</span>
 					· {rec.distance} ft
@@ -47,6 +51,10 @@
 				{#if rec.throw_style === 'forehand'}
 					<span class="rounded-full bg-violet-950 px-2 py-1 text-xs font-bold text-violet-300">
 						FH
+					</span>
+				{:else}
+					<span class="rounded-full bg-sky-950 px-2 py-1 text-xs font-bold text-sky-300">
+						BH
 					</span>
 				{/if}
 				<span

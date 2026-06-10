@@ -1,13 +1,10 @@
 import { api } from '$lib/api';
-import { haversineFeet } from '$lib/geo';
+import { chainDistanceFeet } from '$lib/geo';
 import type { MapperHole } from '$lib/types';
 
 function chainDistance(points: { lat: number; lng: number }[]): number {
-	let total = 0;
-	for (let i = 0; i < points.length - 1; i++) {
-		total += haversineFeet(points[i].lat, points[i].lng, points[i + 1].lat, points[i + 1].lng);
-	}
-	return Math.round(total);
+	// Best-fit fairway line, matching the server's recompute
+	return Math.round(chainDistanceFeet(points));
 }
 
 /** Persist a fully placed mapper hole: hole + tee/waypoint/basket nodes,

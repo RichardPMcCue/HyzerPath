@@ -23,6 +23,13 @@ export interface Disc {
 }
 
 export type ThrowStyle = 'backhand' | 'forehand';
+export type Hand = 'right' | 'left';
+
+export interface ThrowStyleRow {
+	throw_type: ThrowStyle;
+	hand: Hand;
+	priority: number;
+}
 
 export interface DiscStat {
 	stat_id: number;
