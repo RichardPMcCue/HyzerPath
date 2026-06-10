@@ -24,6 +24,40 @@
 	let courses = $state<Map<number, Course>>(new Map());
 	let discCount = $state<number | null>(null);
 
+	let username = $state('');
+	let usernameLoaded = $state(false);
+	let savingName = $state(false);
+	let nameError = $state<string | null>(null);
+	let nameSaved = $state(false);
+
+	// Prefill once the layout's getMe() resolves
+	$effect(() => {
+		if (!usernameLoaded && auth.user) {
+			username = auth.user.username ?? '';
+			usernameLoaded = true;
+		}
+	});
+
+	const usernameDirty = $derived(
+		usernameLoaded && username.trim() !== (auth.user?.username ?? '') && username.trim().length > 0
+	);
+
+	async function saveUsername() {
+		savingName = true;
+		nameError = null;
+		nameSaved = false;
+		try {
+			const me = await api.updateMe({ username: username.trim() });
+			auth.setUser(me);
+			nameSaved = true;
+			setTimeout(() => (nameSaved = false), 2000);
+		} catch (e) {
+			nameError = (e as Error).message;
+		} finally {
+			savingName = false;
+		}
+	}
+
 	$effect(() => {
 		Promise.all([api.listRounds(), api.getCourses()])
 			.then(([r, c]) => {
@@ -80,8 +114,41 @@
 
 <main class="space-y-4 px-4 pt-2">
 	<div class="rounded-2xl border border-edge bg-card p-4">
-		<p class="text-xs tracking-wide text-ink-dim uppercase">Signed in</p>
-		<p class="mt-1 font-semibold">User #{payload?.user_id ?? '?'}</p>
+		<div class="flex items-center justify-between">
+			<p class="text-xs tracking-wide text-ink-dim uppercase">Signed in</p>
+			{#if auth.isAdmin}
+				<span class="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold tracking-wide text-accent uppercase">
+					Admin
+				</span>
+			{/if}
+		</div>
+		<div class="mt-2 flex gap-2">
+			<input
+				type="text"
+				placeholder={auth.user?.name ?? 'Username'}
+				bind:value={username}
+				maxlength="30"
+				class="min-w-0 flex-1 rounded-xl border border-edge bg-card-raised px-3 py-2 text-sm font-semibold placeholder:font-normal placeholder:text-ink-dim focus:border-accent focus:outline-none"
+			/>
+			{#if usernameDirty}
+				<button
+					class="rounded-xl bg-accent px-3.5 py-2 text-sm font-bold text-surface transition active:scale-95 disabled:opacity-50"
+					onclick={saveUsername}
+					disabled={savingName}
+				>
+					{savingName ? '…' : 'Save'}
+				</button>
+			{:else if nameSaved}
+				<span class="flex items-center px-2 text-sm text-accent">✓</span>
+			{/if}
+		</div>
+		{#if nameError}
+			<p class="mt-1.5 text-xs text-red-400">{nameError}</p>
+		{/if}
+		<p class="mt-2 text-xs text-ink-dim">
+			User #{auth.user?.user_id ?? payload?.user_id ?? '?'}
+			{#if auth.user?.email}· {auth.user.email}{/if}
+		</p>
 		{#if payload}
 			<p class="mt-0.5 text-xs text-ink-dim">
 				Session expires {new Date(payload.exp * 1000).toLocaleDateString()}

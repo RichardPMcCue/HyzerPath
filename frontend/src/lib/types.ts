@@ -2,6 +2,7 @@ export interface Me {
 	user_id: number;
 	email: string;
 	name: string | null;
+	username: string | null;
 	is_admin: boolean | null;
 }
 

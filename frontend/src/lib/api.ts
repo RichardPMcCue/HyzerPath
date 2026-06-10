@@ -98,6 +98,8 @@ export const api = {
 
 	// --- auth ---
 	getMe: () => request<Me>('/auth/me'),
+	updateMe: (update: { username: string }) =>
+		request<Me>('/auth/me', { method: 'PATCH', body: JSON.stringify(update) }),
 
 	// --- courses ---
 	getCourses: () => request<Course[]>('/courses'),

@@ -17,6 +17,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=False)
     google_id = Column(String, unique=True, nullable=False)
     name = Column(String)
+    username = Column(String, unique=True)
     created_at = Column(DateTime, default=utcnow)
     is_admin = Column(Boolean)
 

@@ -2,7 +2,7 @@ import os
 import httpx
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from jose import jwt
 from sqlalchemy.orm import Session
@@ -20,11 +20,38 @@ class MeResponse(BaseModel):
     user_id: int
     email: str
     name: str | None = None
+    username: str | None = None
     is_admin: bool | None = None
+
+
+class MeUpdate(BaseModel):
+    username: str
 
 
 @router.get("/me", response_model=MeResponse)
 async def me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.patch("/me", response_model=MeResponse)
+async def update_me(
+    update: MeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    username = update.username.strip()
+    if not (2 <= len(username) <= 30):
+        raise HTTPException(status_code=400, detail="Username must be 2-30 characters")
+
+    taken = db.query(User).filter(
+        User.username == username, User.user_id != current_user.user_id
+    ).first()
+    if taken is not None:
+        raise HTTPException(status_code=409, detail="Username is already taken")
+
+    current_user.username = username
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
