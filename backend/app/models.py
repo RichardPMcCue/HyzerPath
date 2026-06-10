@@ -161,7 +161,7 @@ class Course(Base):
     total_par = Column(Integer)
     is_approved = Column(Boolean)
 
-    holes = relationship("Hole", back_populates="course")
+    holes = relationship("Hole", back_populates="course", cascade="all, delete-orphan")
     rounds = relationship("Round", back_populates="course")
 
 
@@ -178,8 +178,8 @@ class Hole(Base):
     is_approved = Column(Boolean)
 
     course = relationship("Course", back_populates="holes")
-    nodes = relationship("HoleNode", back_populates="hole")
-    hole_hazards = relationship("HoleHazard", back_populates="hole")
+    nodes = relationship("HoleNode", back_populates="hole", cascade="all, delete-orphan")
+    hole_hazards = relationship("HoleHazard", back_populates="hole", cascade="all, delete-orphan")
     round_holes = relationship("RoundHole", back_populates="hole")
 
 class HoleNode(Base):
@@ -196,8 +196,8 @@ class HoleNode(Base):
     is_fairway = Column(Boolean, nullable=False, default=True, server_default="true")
 
     hole = relationship("Hole", back_populates="nodes")
-    outgoing_edges = relationship("HoleEdge", foreign_keys="HoleEdge.from_node_id", back_populates="from_node")
-    incoming_edges = relationship("HoleEdge", foreign_keys="HoleEdge.to_node_id", back_populates="to_node")
+    outgoing_edges = relationship("HoleEdge", foreign_keys="HoleEdge.from_node_id", back_populates="from_node", cascade="all, delete-orphan")
+    incoming_edges = relationship("HoleEdge", foreign_keys="HoleEdge.to_node_id", back_populates="to_node", cascade="all, delete-orphan")
 
 class HoleEdge(Base):
     __tablename__ = "hole_edges"
@@ -210,7 +210,7 @@ class HoleEdge(Base):
 
     from_node = relationship("HoleNode", foreign_keys=[from_node_id], back_populates="outgoing_edges")
     to_node = relationship("HoleNode", foreign_keys=[to_node_id], back_populates="incoming_edges")
-    edge_hazards = relationship("EdgeHazard", back_populates="edge")
+    edge_hazards = relationship("EdgeHazard", back_populates="edge", cascade="all, delete-orphan")
 
 class HoleHazard(Base):
     __tablename__ = "hole_hazards"

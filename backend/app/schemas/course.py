@@ -25,6 +25,15 @@ class HoleNodeCreate(BaseModel):
     centerline_distance: Optional[float] = None
     is_fairway: bool = True
 
+class HoleNodeUpdate(BaseModel):
+    node_type: Optional[NodeType] = None
+    sequence: Optional[int] = None
+    label: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    centerline_distance: Optional[float] = None
+    is_fairway: Optional[bool] = None
+
 class HoleEdgeCreate(BaseModel):
     from_node_id: int
     to_node_id: int

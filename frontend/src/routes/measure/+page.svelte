@@ -53,6 +53,10 @@
 							'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 						],
 						tileSize: 256,
+						// Esri imagery runs out around z19 in many areas; without this
+						// MapLibre requests missing tiles and renders blank instead of
+						// upscaling the deepest available zoom.
+						maxzoom: 19,
 						attribution: 'Esri'
 					}
 				},
@@ -62,6 +66,18 @@
 			zoom: 4,
 			attributionControl: false
 		});
+
+		// Live "you are here" dot + recenter button
+		const geolocate = new maplibregl.GeolocateControl({
+			positionOptions: { enableHighAccuracy: true },
+			trackUserLocation: true,
+			showAccuracyCircle: true
+		});
+		map.addControl(geolocate, 'top-right');
+		geolocate.on('geolocate', (pos) => {
+			gpsAccuracy = pos.coords.accuracy * 3.28084;
+		});
+
 		map.on('load', () => {
 			map!.resize(); // container may have settled after construction
 			map!.addSource('lines', { type: 'geojson', data: linesGeoJSON() });
@@ -72,17 +88,9 @@
 				layout: { 'line-cap': 'round' },
 				paint: { 'line-color': '#34d399', 'line-width': 3, 'line-dasharray': [0.5, 1.8] }
 			});
+			// Fly to the player and start tracking as soon as GPS resolves
+			geolocate.trigger();
 		});
-
-		// Fly to the player as soon as GPS resolves
-		getPosition()
-			.then((pos) => {
-				gpsAccuracy = pos.coords.accuracy * 3.28084;
-				map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 18 });
-			})
-			.catch(() => {
-				/* stay at the fallback view */
-			});
 
 		return () => map?.remove();
 	});

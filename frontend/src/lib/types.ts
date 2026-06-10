@@ -1,3 +1,10 @@
+export interface Me {
+	user_id: number;
+	email: string;
+	name: string | null;
+	is_admin: boolean | null;
+}
+
 export type DiscType = 'putter' | 'midrange' | 'fairway_driver' | 'distance_driver';
 
 export interface Disc {
@@ -106,6 +113,22 @@ export interface Course {
 }
 
 export type NodeType = 'tee' | 'landing_zone' | 'mando' | 'dogleg' | 'basket';
+
+/** One hole being placed/edited in the course mapper UI. */
+export interface MapperHole {
+	holeNumber: number;
+	par: number;
+	tee: { lat: number; lng: number } | null;
+	pin: { lat: number; lng: number } | null;
+	/** Set when the hole already exists on the server (edit mode) */
+	holeId?: number;
+	teeNodeId?: number;
+	pinNodeId?: number;
+	/** Dirty flags so edit mode only PATCHes what changed */
+	teeMoved?: boolean;
+	pinMoved?: boolean;
+	parChanged?: boolean;
+}
 
 export interface HoleNode {
 	hole_node_id: number;

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
+	import { auth } from '$lib/auth.svelte';
 	import type { Course } from '$lib/types';
 
 	let courses = $state<Course[] | null>(null);
@@ -23,7 +24,17 @@
 </script>
 
 <header class="sticky top-0 z-30 bg-surface/95 px-4 pt-6 pb-3 backdrop-blur">
-	<h1 class="text-2xl font-bold">Courses</h1>
+	<div class="flex items-center justify-between">
+		<h1 class="text-2xl font-bold">Courses</h1>
+		{#if auth.isAdmin}
+			<a
+				href="/courses/new"
+				class="rounded-xl bg-accent px-3.5 py-2 text-sm font-bold text-surface transition active:scale-95"
+			>
+				+ New
+			</a>
+		{/if}
+	</div>
 	<input
 		type="search"
 		placeholder="Search courses or cities…"

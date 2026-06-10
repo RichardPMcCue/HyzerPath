@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import Course, User, Hole, HoleNode, HoleEdge, Disc, UserDiscStat
-from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse, HoleNodeCreate, HoleEdgeCreate
-from app.dependencies import get_current_user
+from app.models import Course, User, Hole, HoleNode, HoleEdge, Disc, UserDiscStat, Round, RoundHole
+from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse, HoleNodeCreate, HoleNodeUpdate, HoleEdgeCreate
+from app.dependencies import get_current_user, get_current_admin
 from app.graph import dijkstra, compute_edge_weight
 from app.recommendation import SegmentRecommendation, recommend_path, player_reach
 from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence, compute_fairway_polygon, haversine_feet
@@ -17,20 +17,83 @@ CenterlinePoint = namedtuple("CenterlinePoint", ["latitude", "longitude"])
 
 router = APIRouter(prefix="/courses", tags=["course"])
 
+
+def recompute_total_par(course: Course):
+    course.total_par = sum(h.par for h in course.holes) or course.total_par
+
+
+def recompute_hole_geometry(db: Session, hole: Hole):
+    """After a node moves: refresh edge distances and the hole's tee→basket length."""
+    nodes = {n.hole_node_id: n for n in hole.nodes}
+    edges = db.query(HoleEdge).filter(HoleEdge.from_node_id.in_(nodes.keys())).all()
+    for e in edges:
+        a, b = nodes.get(e.from_node_id), nodes.get(e.to_node_id)
+        if a and b and None not in (a.latitude, a.longitude, b.latitude, b.longitude):
+            e.distance = round(haversine_feet(a.latitude, a.longitude, b.latitude, b.longitude))
+    tee = next((n for n in hole.nodes if n.node_type == "tee"), None)
+    basket = next((n for n in hole.nodes if n.node_type == "basket"), None)
+    if tee and basket and None not in (tee.latitude, tee.longitude, basket.latitude, basket.longitude):
+        hole.distance = round(haversine_feet(tee.latitude, tee.longitude, basket.latitude, basket.longitude))
+
+
 @router.post("/{course_id}/holes", response_model=HoleResponse)
-async def create_hole(course_id: int, hole_in: HoleCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def create_hole(course_id: int, hole_in: HoleCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
     course = db.query(Course).filter(Course.course_id == course_id).first()
     if course is None:
         raise HTTPException(status_code=404, detail="Course not found")
 
     hole_dict = hole_in.model_dump()
     hole_dict["course_id"] = course_id
-    hole_dict["is_approved"] = False
+    hole_dict["is_approved"] = True
     db_hole = Hole(**hole_dict)
     db.add(db_hole)
+    db.flush()
+    recompute_total_par(course)
     db.commit()
     db.refresh(db_hole)
     return db_hole
+
+
+@router.patch("/{course_id}/holes/{hole_id}", response_model=HoleResponse)
+async def patch_hole(course_id: int, hole_id: int, hole_in: HoleUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    for key, value in hole_in.model_dump().items():
+        if value is not None:
+            setattr(hole, key, value)
+
+    recompute_total_par(hole.course)
+    db.commit()
+    db.refresh(hole)
+    return hole
+
+
+@router.delete("/{course_id}/holes/{hole_id}")
+async def delete_hole(course_id: int, hole_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    played = db.query(RoundHole).filter(RoundHole.hole_id == hole_id).first()
+    if played is not None:
+        raise HTTPException(status_code=409, detail="Hole has recorded rounds and cannot be deleted")
+
+    course = hole.course
+    db.delete(hole)
+    db.flush()
+    recompute_total_par(course)
+    db.commit()
+    return {"message": "Hole deleted"}
+
+
+@router.get("/{course_id}/holes/{hole_id}/nodes", response_model=list[HoleNodeResponse])
+async def get_hole_nodes(course_id: int, hole_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+    return db.query(HoleNode).filter(HoleNode.hole_id == hole_id).order_by(HoleNode.sequence).all()
 
 @router.get("/{course_id}/holes/{hole_id}/path", response_model=HolePathResponse)
 async def get_path(
@@ -189,7 +252,7 @@ async def create_hole_node(
     hole_id: int,
     node_in: HoleNodeCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin)
 ):
     course = db.query(Course).filter(Course.course_id == course_id).first()
     if course is None:
@@ -203,9 +266,40 @@ async def create_hole_node(
     node_dict["hole_id"] = hole_id
     db_node = HoleNode(**node_dict)
     db.add(db_node)
+    db.flush()
+    recompute_hole_geometry(db, hole)
     db.commit()
     db.refresh(db_node)
     return db_node
+
+
+@router.patch("/{course_id}/holes/{hole_id}/nodes/{node_id}", response_model=HoleNodeResponse)
+async def patch_hole_node(
+    course_id: int,
+    hole_id: int,
+    node_id: int,
+    node_in: HoleNodeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    node = db.query(HoleNode).filter(
+        HoleNode.hole_node_id == node_id, HoleNode.hole_id == hole_id
+    ).first()
+    if node is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    for key, value in node_in.model_dump(exclude_unset=True).items():
+        setattr(node, key, value)
+
+    db.flush()
+    recompute_hole_geometry(db, hole)
+    db.commit()
+    db.refresh(node)
+    return node
 
 
 @router.post("/{course_id}/holes/{hole_id}/edges", response_model=HoleEdgeResponse)
@@ -214,7 +308,7 @@ async def create_hole_edge(
     hole_id: int,
     edge_in: HoleEdgeCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin)
 ):
     course = db.query(Course).filter(Course.course_id == course_id).first()
     if course is None:
@@ -247,14 +341,18 @@ async def create_hole_edge(
 
 @router.get("", response_model=list[CourseResponse])
 async def get_courses(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    courses = db.query(Course).filter(Course.is_approved == True).all()
-    return courses
+    # Admins see everything, including unapproved courses they are still mapping
+    query = db.query(Course)
+    if not current_user.is_admin:
+        query = query.filter(Course.is_approved == True)
+    return query.all()
 
 
 @router.post("", response_model=CourseResponse)
 async def create_course(course_in: CourseCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     course_dict = course_in.model_dump()
-    course_dict["is_approved"] = False
+    # Admin-created courses go live immediately; others wait for approval
+    course_dict["is_approved"] = bool(current_user.is_admin)
     db_course = Course(
          **course_dict
     )
@@ -273,7 +371,7 @@ async def get_course(course_id: int, db: Session = Depends(get_db), current_user
     return course
 
 @router.patch("/{course_id}", response_model=CourseResponse)
-async def patch_courses(course_in: CourseUpdate, course_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def patch_courses(course_in: CourseUpdate, course_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
     course = db.query(Course).filter(Course.course_id == course_id).first()
     
     if course is None:
@@ -288,12 +386,16 @@ async def patch_courses(course_in: CourseUpdate, course_id: int, db: Session = D
     return course
 
 @router.delete("/{course_id}")
-async def delete_courses(course_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def delete_courses(course_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
     course = db.query(Course).filter(Course.course_id == course_id).first()
 
     if course is None:
         raise HTTPException(status_code=404, detail="Course not found")
-    
+
+    played = db.query(Round).filter(Round.course_id == course_id).first()
+    if played is not None:
+        raise HTTPException(status_code=409, detail="Course has recorded rounds and cannot be deleted")
+
     db.delete(course)
     db.commit()
     return {"message": "Course deleted"}

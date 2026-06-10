@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
+	import { api } from '$lib/api';
 	import BottomNav from '$lib/components/BottomNav.svelte';
 
 	let { children } = $props();
@@ -27,6 +28,14 @@
 			goto('/login', { replaceState: true }).catch(() => window.location.replace('/login'));
 		}
 		ready = true;
+
+		// Profile (incl. is_admin) drives admin-only UI like course editing
+		if (auth.isLoggedIn) {
+			api
+				.getMe()
+				.then((me) => auth.setUser(me))
+				.catch(() => {});
+		}
 	});
 
 	const onLoginPage = $derived(page.url.pathname === '/login');

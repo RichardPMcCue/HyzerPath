@@ -15,3 +15,9 @@ async def get_current_user(authorization: str = Header(...), db: Session = Depen
         return user
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+async def get_current_admin(current_user: User = Depends(get_current_user)):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user

@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
+	import { auth } from '$lib/auth.svelte';
 	import type { Course } from '$lib/types';
 
 	const courseId = $derived(Number(page.params.courseId));
@@ -36,12 +37,23 @@
 					{course.city}, {course.state} · Par {course.total_par}
 				</p>
 			</div>
-			<button
-				class="rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-surface transition active:scale-95"
-				onclick={() => goto(`/courses/${courseId}/setup`)}
-			>
-				▶ Play
-			</button>
+			<div class="flex gap-2">
+				{#if auth.isAdmin}
+					<button
+						class="rounded-xl border border-edge bg-card px-3 py-2.5 text-sm font-semibold transition active:scale-95"
+						onclick={() => goto(`/courses/${courseId}/edit`)}
+						aria-label="Edit course map"
+					>
+						✏️
+					</button>
+				{/if}
+				<button
+					class="rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-surface transition active:scale-95"
+					onclick={() => goto(`/courses/${courseId}/setup`)}
+				>
+					▶ Play
+				</button>
+			</div>
 		</div>
 	{/if}
 </header>

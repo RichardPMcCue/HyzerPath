@@ -6,7 +6,11 @@ import type {
 	Disc,
 	DiscItResult,
 	DiscStat,
+	Hole,
+	HoleEdge,
+	HoleNode,
 	HolePath,
+	Me,
 	Round,
 	RoundHoleScore,
 	RoundStats,
@@ -32,7 +36,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 	const response = await fetch(`${API_URL}${path}`, { ...options, headers });
 
-	if (response.status === 401 || response.status === 403) {
+	// 401 = bad/expired token → re-login. 403 = authenticated but not allowed
+	// (e.g. non-admin hitting an admin route) → surface the error, keep session.
+	if (response.status === 401) {
 		auth.logout();
 		goto('/login');
 		throw new ApiError(response.status, 'Session expired');
@@ -90,9 +96,52 @@ export const api = {
 	deleteThrow: (sessionId: number, throwId: number) =>
 		request(`/throws/sessions/${sessionId}/throws/${throwId}`, { method: 'DELETE' }),
 
+	// --- auth ---
+	getMe: () => request<Me>('/auth/me'),
+
 	// --- courses ---
 	getCourses: () => request<Course[]>('/courses'),
 	getCourse: (courseId: number) => request<Course>(`/courses/${courseId}`),
+	createCourse: (course: {
+		name: string;
+		city: string;
+		state: string;
+		address: string;
+		total_par: number;
+	}) => request<Course>('/courses', { method: 'POST', body: JSON.stringify(course) }),
+	deleteCourse: (courseId: number) => request(`/courses/${courseId}`, { method: 'DELETE' }),
+	createHole: (
+		courseId: number,
+		hole: { hole_number: number; par: number; distance: number; elevation: number }
+	) => request<Hole>(`/courses/${courseId}/holes`, { method: 'POST', body: JSON.stringify(hole) }),
+	updateHole: (courseId: number, holeId: number, hole: Partial<Hole>) =>
+		request<Hole>(`/courses/${courseId}/holes/${holeId}`, {
+			method: 'PATCH',
+			body: JSON.stringify(hole)
+		}),
+	deleteHole: (courseId: number, holeId: number) =>
+		request(`/courses/${courseId}/holes/${holeId}`, { method: 'DELETE' }),
+	getHoleNodes: (courseId: number, holeId: number) =>
+		request<HoleNode[]>(`/courses/${courseId}/holes/${holeId}/nodes`),
+	createHoleNode: (courseId: number, holeId: number, node: Partial<HoleNode>) =>
+		request<HoleNode>(`/courses/${courseId}/holes/${holeId}/nodes`, {
+			method: 'POST',
+			body: JSON.stringify(node)
+		}),
+	updateHoleNode: (courseId: number, holeId: number, nodeId: number, node: Partial<HoleNode>) =>
+		request<HoleNode>(`/courses/${courseId}/holes/${holeId}/nodes/${nodeId}`, {
+			method: 'PATCH',
+			body: JSON.stringify(node)
+		}),
+	createHoleEdge: (
+		courseId: number,
+		holeId: number,
+		edge: { from_node_id: number; to_node_id: number; distance: number }
+	) =>
+		request<HoleEdge>(`/courses/${courseId}/holes/${holeId}/edges`, {
+			method: 'POST',
+			body: JSON.stringify(edge)
+		}),
 
 	// --- caddie ---
 	getHolePath: (

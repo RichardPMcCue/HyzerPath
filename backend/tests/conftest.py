@@ -27,7 +27,7 @@ def client():
     app.dependency_overrides[get_db] = override_get_db
 
     db = TestingSessionLocal()
-    test_user = User(user_id=1, email="test@test.com", google_id="test_google_id", name="Test")
+    test_user = User(user_id=1, email="test@test.com", google_id="test_google_id", name="Test", is_admin=True)
     db.add(test_user)
     db.commit()
     db.close()

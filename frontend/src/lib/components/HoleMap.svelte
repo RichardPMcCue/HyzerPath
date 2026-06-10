@@ -118,6 +118,8 @@
 							'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 						],
 						tileSize: 256,
+						// Esri imagery runs out around z19; upscale instead of blank tiles
+						maxzoom: 19,
 						attribution: 'Esri'
 					}
 				},

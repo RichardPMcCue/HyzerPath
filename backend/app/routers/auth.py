@@ -6,10 +6,26 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 from jose import jwt
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict
 from app.database import get_db
+from app.dependencies import get_current_user
 from app.models import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+class MeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: int
+    email: str
+    name: str | None = None
+    is_admin: bool | None = None
+
+
+@router.get("/me", response_model=MeResponse)
+async def me(current_user: User = Depends(get_current_user)):
+    return current_user
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -60,6 +76,13 @@ async def callback(code: str, db: Session = Depends(get_db)):
     else:
         user.name = identity["name"]
         user.email = identity["email"]
+
+    # Emails listed in ADMIN_EMAILS (comma-separated) are promoted on login
+    admin_emails = {
+        e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
+    }
+    if user.email.lower() in admin_emails:
+        user.is_admin = True
 
     db.commit()
     db.refresh(user)
