@@ -4,7 +4,7 @@
 	import type { Feature, FeatureCollection } from 'geojson';
 	import { autoResize, satelliteStyle } from '$lib/map';
 	import type { MapperHazard, MapperHole } from '$lib/types';
-	import { haversineFeet } from '$lib/geo';
+	import { haversineFeet, orderFairwayWaypoints } from '$lib/geo';
 
 	let {
 		holes = $bindable(),
@@ -34,8 +34,25 @@
 	let draftHazard = $state<{ lat: number; lng: number }[]>([]);
 	let draftType = $state<string>('ob');
 
-	// Fairway/hazard taps apply to the most recent hole that has a tee
-	const activeHole = $derived([...holes].reverse().find((h) => h.tee) ?? null);
+	// Fairway/hazard taps apply to the selected hole (tap a hole chip to
+	// switch), defaulting to the most recent hole with a tee
+	let selectedHoleNumber = $state<number | null>(null);
+	const activeHole = $derived(
+		holes.find((h) => h.holeNumber === selectedHoleNumber && h.tee) ??
+			[...holes].reverse().find((h) => h.tee) ??
+			null
+	);
+
+	// Keep the corridor sane: waypoints always follow the best-fit chain from
+	// tee to pin, no matter what order they were tapped or dragged in
+	function applyFairwayOrder(h: MapperHole) {
+		if (!h.tee || h.fairway.length < 2) return;
+		const ordered = orderFairwayWaypoints(h.tee, h.fairway, h.pin);
+		if (ordered.some((wp, i) => wp !== h.fairway[i])) {
+			h.fairway = ordered;
+			if (h.holeId) h.fairwayChanged = true;
+		}
+	}
 
 	// What the next tap will place in layout mode
 	const nextPlacement = $derived.by(() => {
@@ -158,8 +175,9 @@
 					h[kind] = { lat, lng };
 					if (kind === 'tee') h.teeMoved = true;
 					else h.pinMoved = true;
+					applyFairwayOrder(h);
 					holes = [...holes];
-					setSource('hole-lines', linesGeoJSON());
+					syncMap();
 				});
 				markers.push(marker);
 			}
@@ -175,8 +193,9 @@
 					wp.lat = lat;
 					wp.lng = lng;
 					wp.moved = true;
+					applyFairwayOrder(h);
 					holes = [...holes];
-					setSource('hole-lines', linesGeoJSON());
+					syncMap();
 				});
 				markers.push(marker);
 			}
@@ -207,6 +226,7 @@
 			}
 			activeHole.fairway.push({ lat, lng });
 			if (activeHole.holeId) activeHole.fairwayChanged = true;
+			applyFairwayOrder(activeHole);
 			holes = [...holes];
 			syncMap();
 			return;
@@ -215,6 +235,7 @@
 		if (last && last.tee && !last.pin) {
 			last.pin = { lat, lng };
 			last.pinMoved = true;
+			applyFairwayOrder(last);
 		} else {
 			holes.push({
 				holeNumber: nextPlacement.hole,
@@ -224,6 +245,7 @@
 				fairway: [],
 				hazards: []
 			});
+			selectedHoleNumber = nextPlacement.hole;
 		}
 		holes = [...holes];
 		syncMap();
@@ -326,6 +348,7 @@
 	}
 
 	function focusHole(h: MapperHole) {
+		selectedHoleNumber = h.holeNumber;
 		const pt = h.tee ?? h.pin;
 		if (pt) map?.flyTo({ center: [pt.lng, pt.lat], zoom: 18 });
 	}
@@ -439,7 +462,7 @@
 			{#if activeHole}
 				Tap along the fairway of <span class="text-teal-300">hole {activeHole.holeNumber}</span>
 				<span class="block pt-0.5 font-normal text-ink-dim">
-					waypoints bend the line — drag to adjust
+					any order works — the line auto-fits tee → pin · tap a hole below to switch
 				</span>
 			{:else}
 				Place a tee first (Tee · Basket mode)
@@ -448,9 +471,10 @@
 			Outline a <span style="color:{HAZARD_COLORS[draftType]}">{draftType}</span> area on
 			<span class="text-teal-300">hole {activeHole.holeNumber}</span>
 			<span class="block pt-0.5 font-normal text-ink-dim">
-				tap corners, then “Close area” · {draftHazard.length} point{draftHazard.length === 1
+				tap corners in order, then “Close area” · {draftHazard.length} point{draftHazard.length ===
+				1
 					? ''
-					: 's'}
+					: 's'} · tap a hole below to switch
 			</span>
 		{:else}
 			Place a tee first (Tee · Basket mode)
@@ -526,7 +550,10 @@
 {#if holes.length > 0}
 	<div class="space-y-1.5 pt-2">
 		{#each holes as h (h)}
-			<div class="rounded-xl border border-edge bg-card px-3 py-2">
+			<div
+				class="rounded-xl border bg-card px-3 py-2 transition
+					{h === activeHole && mode !== 'layout' ? 'border-accent' : 'border-edge'}"
+			>
 				<div class="flex items-center gap-2">
 					<button type="button" class="flex-1 text-left text-sm" onclick={() => focusHole(h)}>
 						<span class="font-bold text-accent">#{h.holeNumber}</span>

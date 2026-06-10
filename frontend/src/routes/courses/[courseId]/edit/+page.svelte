@@ -4,6 +4,7 @@
 	import { api } from '$lib/api';
 	import { auth } from '$lib/auth.svelte';
 	import { createMappedHole, holeIsDirty, saveMappedHoleChanges } from '$lib/courseSave';
+	import { orderFairwayWaypoints } from '$lib/geo';
 	import CourseMapper from '$lib/components/CourseMapper.svelte';
 	import type { Course, MapperHole } from '$lib/types';
 
@@ -40,23 +41,37 @@
 						(n) => n.node_type === 'landing_zone' && n.latitude != null && n.longitude != null
 					)
 					.sort((a, b) => a.sequence - b.sequence);
+				const tee_pt =
+					tee?.latitude != null && tee?.longitude != null
+						? { lat: tee.latitude, lng: tee.longitude }
+						: null;
+				const pin_pt =
+					basket?.latitude != null && basket?.longitude != null
+						? { lat: basket.latitude, lng: basket.longitude }
+						: null;
+				let fairway = waypoints.map((n) => ({
+					lat: n.latitude!,
+					lng: n.longitude!,
+					nodeId: n.hole_node_id
+				}));
+				// Repair holes saved with tap-order waypoints: re-fit the chain and
+				// flag for resequencing if the stored order doubles back
+				let fairwayChanged = false;
+				if (tee_pt && fairway.length >= 2) {
+					const ordered = orderFairwayWaypoints(tee_pt, fairway, pin_pt);
+					if (ordered.some((wp, idx) => wp !== fairway[idx])) {
+						fairway = ordered;
+						fairwayChanged = true;
+					}
+				}
 				mapped.push({
 					holeNumber: hole.hole_number,
 					par: hole.par,
 					holeId: hole.hole_id,
-					tee:
-						tee?.latitude != null && tee?.longitude != null
-							? { lat: tee.latitude, lng: tee.longitude }
-							: null,
-					pin:
-						basket?.latitude != null && basket?.longitude != null
-							? { lat: basket.latitude, lng: basket.longitude }
-							: null,
-					fairway: waypoints.map((n) => ({
-						lat: n.latitude!,
-						lng: n.longitude!,
-						nodeId: n.hole_node_id
-					})),
+					tee: tee_pt,
+					pin: pin_pt,
+					fairway,
+					fairwayChanged,
 					hazards: hazards.map((hz) => ({
 						hazard_type: hz.hazard_type,
 						polygon: hz.polygon.map(([lat, lng]) => ({ lat, lng })),
