@@ -225,3 +225,29 @@ def compute_fairway_width_at_sequence(fairway_nodes: list, sequence: int) -> Opt
     lon_spread = (max(lons) - min(lons)) * 297000
     
     return max(lat_spread, lon_spread)
+
+def _segments_intersect(p1, p2, p3, p4) -> bool:
+    """True if segment p1-p2 crosses segment p3-p4 (each point is (lat, lon))."""
+    def orient(a, b, c):
+        v = (b[1] - a[1]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[1] - a[1])
+        return 0 if abs(v) < 1e-18 else (1 if v > 0 else -1)
+
+    o1, o2 = orient(p1, p2, p3), orient(p1, p2, p4)
+    o3, o4 = orient(p3, p4, p1), orient(p3, p4, p2)
+    return o1 != o2 and o3 != o4 and 0 not in (o1, o2) and 0 not in (o3, o4)
+
+
+def segment_crosses_polygon(a_lat, a_lon, b_lat, b_lon, polygon: list) -> bool:
+    """True if the throw line a→b enters the hazard: either endpoint inside,
+    or the segment crosses any polygon edge."""
+    if len(polygon) < 3:
+        return False
+    if point_in_polygon(a_lat, a_lon, polygon) or point_in_polygon(b_lat, b_lon, polygon):
+        return True
+    n = len(polygon)
+    for i in range(n):
+        p3 = (polygon[i][0], polygon[i][1])
+        p4 = (polygon[(i + 1) % n][0], polygon[(i + 1) % n][1])
+        if _segments_intersect((a_lat, a_lon), (b_lat, b_lon), p3, p4):
+            return True
+    return False

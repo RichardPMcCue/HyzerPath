@@ -3,17 +3,25 @@
 	import maplibregl from 'maplibre-gl';
 	import type { Feature, FeatureCollection } from 'geojson';
 	import { autoResize, satelliteStyle } from '$lib/map';
-	import type { HoleNode, SegmentRecommendation } from '$lib/types';
+	import type { Hazard, HoleNode, SegmentRecommendation } from '$lib/types';
 
 	let {
 		nodes,
 		recommendations,
-		fairwayPolygon = []
+		fairwayPolygon = [],
+		hazards = []
 	}: {
 		nodes: HoleNode[];
 		recommendations: SegmentRecommendation[];
 		fairwayPolygon?: [number, number][];
+		hazards?: Hazard[];
 	} = $props();
+
+	const HAZARD_COLORS: Record<string, string> = {
+		ob: '#ef4444',
+		water: '#38bdf8',
+		trees: '#a3e635'
+	};
 
 	let container = $state<HTMLDivElement>()!;
 	let map: maplibregl.Map | null = null;
@@ -74,11 +82,30 @@
 		};
 	}
 
+	function hazardsGeoJSON(): FeatureCollection {
+		const features: Feature[] = [];
+		for (const hz of hazards) {
+			if (hz.polygon.length < 3) continue;
+			// API sends [lat, lon]; GeoJSON wants [lon, lat]
+			const ring = hz.polygon.map(([lat, lon]) => [lon, lat]);
+			ring.push(ring[0]);
+			features.push({
+				type: 'Feature',
+				properties: { color: HAZARD_COLORS[hz.hazard_type] ?? '#ef4444' },
+				geometry: { type: 'Polygon', coordinates: [ring] }
+			});
+		}
+		return { type: 'FeatureCollection', features };
+	}
+
 	function render() {
 		if (!map || !loaded) return;
 
 		const fairwaySource = map.getSource('fairway') as maplibregl.GeoJSONSource | undefined;
 		if (fairwaySource) fairwaySource.setData(fairwayGeoJSON());
+
+		const hazardSource = map.getSource('hazards') as maplibregl.GeoJSONSource | undefined;
+		if (hazardSource) hazardSource.setData(hazardsGeoJSON());
 
 		const source = map.getSource('throws') as maplibregl.GeoJSONSource | undefined;
 		if (source) source.setData(throwLineGeoJSON());
@@ -133,6 +160,21 @@
 				paint: { 'line-color': '#34d399', 'line-opacity': 0.45, 'line-width': 1.5 }
 			});
 
+			// Hazard/OB areas above the fairway, below the throw lines
+			map!.addSource('hazards', { type: 'geojson', data: hazardsGeoJSON() });
+			map!.addLayer({
+				id: 'hazard-fill',
+				type: 'fill',
+				source: 'hazards',
+				paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.22 }
+			});
+			map!.addLayer({
+				id: 'hazard-outline',
+				type: 'line',
+				source: 'hazards',
+				paint: { 'line-color': ['get', 'color'], 'line-width': 1.5, 'line-opacity': 0.8 }
+			});
+
 			map!.addSource('throws', { type: 'geojson', data: throwLineGeoJSON() });
 			map!.addLayer({
 				id: 'throw-lines',
@@ -159,6 +201,7 @@
 	$effect(() => {
 		recommendations;
 		fairwayPolygon;
+		hazards;
 		render();
 	});
 </script>

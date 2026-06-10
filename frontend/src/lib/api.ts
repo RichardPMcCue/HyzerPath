@@ -6,6 +6,7 @@ import type {
 	Disc,
 	DiscItResult,
 	DiscStat,
+	Hazard,
 	Hole,
 	HoleEdge,
 	HoleNode,
@@ -150,6 +151,25 @@ export const api = {
 			method: 'POST',
 			body: JSON.stringify(edge)
 		}),
+	deleteHoleNode: (courseId: number, holeId: number, nodeId: number) =>
+		request(`/courses/${courseId}/holes/${holeId}/nodes/${nodeId}`, { method: 'DELETE' }),
+	rebuildHoleEdges: (courseId: number, holeId: number) =>
+		request<HoleEdge[]>(`/courses/${courseId}/holes/${holeId}/edges/rebuild`, {
+			method: 'POST'
+		}),
+	getHoleHazards: (courseId: number, holeId: number) =>
+		request<Hazard[]>(`/courses/${courseId}/holes/${holeId}/hazards`),
+	createHoleHazard: (
+		courseId: number,
+		holeId: number,
+		hazard: { hazard_type: string; polygon: [number, number][] }
+	) =>
+		request<Hazard>(`/courses/${courseId}/holes/${holeId}/hazards`, {
+			method: 'POST',
+			body: JSON.stringify(hazard)
+		}),
+	deleteHoleHazard: (courseId: number, holeId: number, hazardId: number) =>
+		request(`/courses/${courseId}/holes/${holeId}/hazards/${hazardId}`, { method: 'DELETE' }),
 
 	// --- caddie ---
 	getHolePath: (

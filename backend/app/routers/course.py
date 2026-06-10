@@ -1,3 +1,4 @@
+import json
 from collections import namedtuple
 from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException
@@ -5,12 +6,12 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import Course, User, Hole, HoleNode, HoleEdge, Disc, UserDiscStat, Round, RoundHole
-from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse, HoleNodeCreate, HoleNodeUpdate, HoleEdgeCreate
+from app.models import Course, User, Hole, HoleNode, HoleEdge, HoleHazard, EdgeHazard, Disc, UserDiscStat, Round, RoundHole
+from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HoleEdgeResponse, HolePathResponse, HoleNodeCreate, HoleNodeUpdate, HoleEdgeCreate, HazardCreate, HazardResponse
 from app.dependencies import get_current_user, get_current_admin
 from app.graph import dijkstra, compute_edge_weight
 from app.recommendation import SegmentRecommendation, recommend_path, player_reach
-from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence, compute_fairway_polygon, haversine_feet
+from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence, compute_fairway_polygon, haversine_feet, segment_crosses_polygon
 from app.wind import get_wind
 
 CenterlinePoint = namedtuple("CenterlinePoint", ["latitude", "longitude"])
@@ -23,17 +24,114 @@ def recompute_total_par(course: Course):
 
 
 def recompute_hole_geometry(db: Session, hole: Hole):
-    """After a node moves: refresh edge distances and the hole's tee→basket length."""
+    """After a node moves: refresh edge distances and the hole's played length."""
     nodes = {n.hole_node_id: n for n in hole.nodes}
     edges = db.query(HoleEdge).filter(HoleEdge.from_node_id.in_(nodes.keys())).all()
     for e in edges:
         a, b = nodes.get(e.from_node_id), nodes.get(e.to_node_id)
         if a and b and None not in (a.latitude, a.longitude, b.latitude, b.longitude):
             e.distance = round(haversine_feet(a.latitude, a.longitude, b.latitude, b.longitude))
-    tee = next((n for n in hole.nodes if n.node_type == "tee"), None)
-    basket = next((n for n in hole.nodes if n.node_type == "basket"), None)
-    if tee and basket and None not in (tee.latitude, tee.longitude, basket.latitude, basket.longitude):
-        hole.distance = round(haversine_feet(tee.latitude, tee.longitude, basket.latitude, basket.longitude))
+
+    # Hole length follows the fairway chain (dogleg-aware), falling back to
+    # the straight tee→basket line when there are no waypoints.
+    chain = [
+        n for n in sorted(hole.nodes, key=lambda n: n.sequence)
+        if n.is_fairway and n.latitude is not None and n.longitude is not None
+    ]
+    if len(chain) >= 2 and chain[0].node_type == "tee" and chain[-1].node_type == "basket":
+        hole.distance = round(sum(
+            haversine_feet(a.latitude, a.longitude, b.latitude, b.longitude)
+            for a, b in zip(chain, chain[1:])
+        ))
+
+
+def hazard_polygon(h: HoleHazard) -> list:
+    return json.loads(h.polygon) if h.polygon else []
+
+
+def hazard_response(h: HoleHazard) -> HazardResponse:
+    return HazardResponse(
+        hazard_id=h.hazard_id, hole_id=h.hole_id,
+        hazard_type=h.hazard_type, polygon=hazard_polygon(h),
+    )
+
+
+def sync_edge_hazards(db: Session, hole: Hole):
+    """Regenerate EdgeHazard rows from the hole's hazard polygons: every edge
+    whose throw line enters a polygon gets tagged, so drawn OB areas raise the
+    caddie's edge weights. Replaces any previous edge hazards on the hole."""
+    nodes = {n.hole_node_id: n for n in hole.nodes}
+    edges = db.query(HoleEdge).filter(HoleEdge.from_node_id.in_(nodes.keys())).all()
+    polygons = [(h, hazard_polygon(h)) for h in hole.hole_hazards]
+    polygons = [(h, p) for h, p in polygons if len(p) >= 3]
+    for e in edges:
+        for eh in list(e.edge_hazards):
+            db.delete(eh)
+        a, b = nodes.get(e.from_node_id), nodes.get(e.to_node_id)
+        if not a or not b or None in (a.latitude, a.longitude, b.latitude, b.longitude):
+            continue
+        for h, poly in polygons:
+            if segment_crosses_polygon(a.latitude, a.longitude, b.latitude, b.longitude, poly):
+                db.add(EdgeHazard(hole_edge_id=e.hole_edge_id, hazard_type=h.hazard_type))
+
+
+@router.get("/{course_id}/holes/{hole_id}/hazards", response_model=list[HazardResponse])
+async def get_hole_hazards(course_id: int, hole_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+    return [hazard_response(h) for h in hole.hole_hazards]
+
+
+@router.post("/{course_id}/holes/{hole_id}/hazards", response_model=HazardResponse)
+async def create_hole_hazard(
+    course_id: int,
+    hole_id: int,
+    hazard_in: HazardCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+    if len(hazard_in.polygon) < 3:
+        raise HTTPException(status_code=400, detail="Hazard polygon needs at least 3 points")
+
+    hazard = HoleHazard(
+        hole_id=hole_id,
+        hazard_type=hazard_in.hazard_type,
+        polygon=json.dumps([[lat, lng] for lat, lng in hazard_in.polygon]),
+    )
+    db.add(hazard)
+    db.flush()
+    sync_edge_hazards(db, hole)
+    db.commit()
+    db.refresh(hazard)
+    return hazard_response(hazard)
+
+
+@router.delete("/{course_id}/holes/{hole_id}/hazards/{hazard_id}")
+async def delete_hole_hazard(
+    course_id: int,
+    hole_id: int,
+    hazard_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+    hazard = db.query(HoleHazard).filter(
+        HoleHazard.hazard_id == hazard_id, HoleHazard.hole_id == hole_id
+    ).first()
+    if hazard is None:
+        raise HTTPException(status_code=404, detail="Hazard not found")
+
+    db.delete(hazard)
+    db.flush()
+    sync_edge_hazards(db, hole)
+    db.commit()
+    return {"message": "Hazard deleted"}
 
 
 @router.post("/{course_id}/holes", response_model=HoleResponse)
@@ -243,7 +341,8 @@ async def get_path(
         total_distance=total_distance,
         node_count=len(path_nodes),
         recommendations=recommendations,
-        fairway_polygon=compute_fairway_polygon(fairway_nodes, edges)
+        fairway_polygon=compute_fairway_polygon(fairway_nodes, edges),
+        hazards=[hazard_response(h) for h in hole.hole_hazards],
     )
 
 @router.post("/{course_id}/holes/{hole_id}/nodes", response_model=HoleNodeResponse)
@@ -271,6 +370,82 @@ async def create_hole_node(
     db.commit()
     db.refresh(db_node)
     return db_node
+
+
+@router.post("/{course_id}/holes/{hole_id}/edges/rebuild", response_model=list[HoleEdgeResponse])
+async def rebuild_hole_edges(
+    course_id: int,
+    hole_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """Replace the hole's edges with a chain over its GPS nodes by sequence:
+    consecutive + skip-one. Waypoints may be skipped, but the dogleg itself
+    can't be cut (no direct tee→basket edge when waypoints exist)."""
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    gps_nodes = sorted(
+        [n for n in hole.nodes if n.latitude is not None and n.longitude is not None],
+        key=lambda n: n.sequence,
+    )
+    if len(gps_nodes) < 2:
+        raise HTTPException(status_code=400, detail="Need at least two GPS nodes to build edges")
+
+    node_ids = [n.hole_node_id for n in hole.nodes]
+    old_edges = db.query(HoleEdge).filter(HoleEdge.from_node_id.in_(node_ids)).all()
+    for e in old_edges:
+        db.delete(e)  # ORM delete so edge_hazards cascade
+    db.flush()
+
+    new_edges = []
+    for i, a in enumerate(gps_nodes):
+        for j in (i + 1, i + 2):
+            if j >= len(gps_nodes):
+                continue
+            b = gps_nodes[j]
+            # Never bridge tee→basket directly while waypoints exist
+            if len(gps_nodes) > 2 and a.node_type == "tee" and b.node_type == "basket":
+                continue
+            new_edges.append(HoleEdge(
+                from_node_id=a.hole_node_id,
+                to_node_id=b.hole_node_id,
+                distance=round(haversine_feet(a.latitude, a.longitude, b.latitude, b.longitude)),
+            ))
+    db.add_all(new_edges)
+    db.flush()
+    recompute_hole_geometry(db, hole)
+    sync_edge_hazards(db, hole)
+    db.commit()
+    for e in new_edges:
+        db.refresh(e)
+    return new_edges
+
+
+@router.delete("/{course_id}/holes/{hole_id}/nodes/{node_id}")
+async def delete_hole_node(
+    course_id: int,
+    hole_id: int,
+    node_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    hole = db.query(Hole).filter(Hole.hole_id == hole_id, Hole.course_id == course_id).first()
+    if hole is None:
+        raise HTTPException(status_code=404, detail="Hole not found")
+
+    node = db.query(HoleNode).filter(
+        HoleNode.hole_node_id == node_id, HoleNode.hole_id == hole_id
+    ).first()
+    if node is None:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    db.delete(node)  # touching edges cascade via the node's edge relationships
+    db.flush()
+    recompute_hole_geometry(db, hole)
+    db.commit()
+    return {"message": "Node deleted"}
 
 
 @router.patch("/{course_id}/holes/{hole_id}/nodes/{node_id}", response_model=HoleNodeResponse)

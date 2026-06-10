@@ -62,6 +62,7 @@
 			nodes={path.nodes}
 			recommendations={path.recommendations}
 			fairwayPolygon={path.fairway_polygon}
+			hazards={path.hazards}
 		/>
 	{/if}
 

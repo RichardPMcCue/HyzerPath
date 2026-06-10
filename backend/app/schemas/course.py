@@ -80,6 +80,17 @@ class HoleEdgeResponse(BaseModel):
     distance: int
     fairway_width: Optional[int] = None
 
+class HazardCreate(BaseModel):
+    hazard_type: str  # 'ob', 'water', 'trees', ...
+    # Ring of [lat, lon] pairs (open — no need to repeat the first point)
+    polygon: list[tuple[float, float]]
+
+class HazardResponse(BaseModel):
+    hazard_id: int
+    hole_id: int
+    hazard_type: str
+    polygon: list[tuple[float, float]] = []
+
 class HolePathResponse(BaseModel):
     nodes: list[HoleNodeResponse]
     edges: list[HoleEdgeResponse]
@@ -88,6 +99,8 @@ class HolePathResponse(BaseModel):
     recommendations: list[SegmentRecommendation] = []
     # Closed ring of [lat, lon] pairs tracing the fairway corridor, for map display
     fairway_polygon: list[tuple[float, float]] = []
+    # Hazard/OB areas drawn by course editors, for map display
+    hazards: list[HazardResponse] = []
 
 class CourseCreate(BaseModel):
     name: str

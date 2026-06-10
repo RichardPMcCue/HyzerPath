@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
 	import { auth } from '$lib/auth.svelte';
-	import { createMappedHole } from '$lib/courseSave';
+	import { createMappedHole, holeIsDirty, saveMappedHoleChanges } from '$lib/courseSave';
 	import CourseMapper from '$lib/components/CourseMapper.svelte';
 	import type { Course, MapperHole } from '$lib/types';
 
@@ -29,9 +29,17 @@
 			const sorted = [...c.holes].sort((a, b) => a.hole_number - b.hole_number);
 			const mapped: MapperHole[] = [];
 			for (const hole of sorted) {
-				const nodes = await api.getHoleNodes(id, hole.hole_id);
+				const [nodes, hazards] = await Promise.all([
+					api.getHoleNodes(id, hole.hole_id),
+					api.getHoleHazards(id, hole.hole_id)
+				]);
 				const tee = nodes.find((n) => n.node_type === 'tee');
 				const basket = nodes.find((n) => n.node_type === 'basket');
+				const waypoints = nodes
+					.filter(
+						(n) => n.node_type === 'landing_zone' && n.latitude != null && n.longitude != null
+					)
+					.sort((a, b) => a.sequence - b.sequence);
 				mapped.push({
 					holeNumber: hole.hole_number,
 					par: hole.par,
@@ -44,6 +52,16 @@
 						basket?.latitude != null && basket?.longitude != null
 							? { lat: basket.latitude, lng: basket.longitude }
 							: null,
+					fairway: waypoints.map((n) => ({
+						lat: n.latitude!,
+						lng: n.longitude!,
+						nodeId: n.hole_node_id
+					})),
+					hazards: hazards.map((hz) => ({
+						hazard_type: hz.hazard_type,
+						polygon: hz.polygon.map(([lat, lng]) => ({ lat, lng })),
+						hazardId: hz.hazard_id
+					})),
 					teeNodeId: tee?.hole_node_id,
 					pinNodeId: basket?.hole_node_id
 				});
@@ -56,9 +74,7 @@
 		}
 	}
 
-	const dirtyCount = $derived(
-		holes.filter((h) => !h.holeId || h.teeMoved || h.pinMoved || h.parChanged).length
-	);
+	const dirtyCount = $derived(holes.filter(holeIsDirty).length);
 
 	async function save() {
 		saving = true;
@@ -69,43 +85,7 @@
 					if (h.tee && h.pin) await createMappedHole(courseId, h);
 					continue;
 				}
-				if (h.teeMoved && h.tee) {
-					if (h.teeNodeId) {
-						await api.updateHoleNode(courseId, h.holeId, h.teeNodeId, {
-							latitude: h.tee.lat,
-							longitude: h.tee.lng
-						});
-					} else {
-						await api.createHoleNode(courseId, h.holeId, {
-							node_type: 'tee',
-							sequence: 0,
-							label: 'Tee',
-							latitude: h.tee.lat,
-							longitude: h.tee.lng,
-							is_fairway: true
-						});
-					}
-				}
-				if (h.pinMoved && h.pin) {
-					if (h.pinNodeId) {
-						await api.updateHoleNode(courseId, h.holeId, h.pinNodeId, {
-							latitude: h.pin.lat,
-							longitude: h.pin.lng
-						});
-					} else {
-						await api.createHoleNode(courseId, h.holeId, {
-							node_type: 'basket',
-							sequence: 1,
-							label: 'Basket',
-							latitude: h.pin.lat,
-							longitude: h.pin.lng,
-							is_fairway: true
-						});
-					}
-				}
-				if (h.parChanged) {
-					await api.updateHole(courseId, h.holeId, { par: h.par });
-				}
+				await saveMappedHoleChanges(courseId, h);
 			}
 			await load(courseId); // re-pull: server recomputed distances/total par
 		} catch (e) {

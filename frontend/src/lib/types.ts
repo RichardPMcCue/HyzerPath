@@ -115,12 +115,23 @@ export interface Course {
 
 export type NodeType = 'tee' | 'landing_zone' | 'mando' | 'dogleg' | 'basket';
 
+/** A fairway waypoint between tee and basket in the mapper. */
+export interface MapperWaypoint {
+	lat: number;
+	lng: number;
+	/** Set when the waypoint exists on the server (edit mode) */
+	nodeId?: number;
+	moved?: boolean;
+}
+
 /** One hole being placed/edited in the course mapper UI. */
 export interface MapperHole {
 	holeNumber: number;
 	par: number;
 	tee: { lat: number; lng: number } | null;
 	pin: { lat: number; lng: number } | null;
+	/** Fairway waypoints (landing zones), in play order — defines doglegs */
+	fairway: MapperWaypoint[];
 	/** Set when the hole already exists on the server (edit mode) */
 	holeId?: number;
 	teeNodeId?: number;
@@ -129,6 +140,22 @@ export interface MapperHole {
 	teeMoved?: boolean;
 	pinMoved?: boolean;
 	parChanged?: boolean;
+	/** Waypoints added/removed — edges need a rebuild on save */
+	fairwayChanged?: boolean;
+	/** Persisted waypoint nodes removed via undo, deleted on save */
+	removedNodeIds?: number[];
+	/** Hazard/OB areas drawn for this hole */
+	hazards: MapperHazard[];
+	/** Persisted hazards removed in the editor, deleted on save */
+	removedHazardIds?: number[];
+}
+
+/** A hazard area drawn in the mapper. */
+export interface MapperHazard {
+	hazard_type: string;
+	polygon: { lat: number; lng: number }[];
+	/** Set when the hazard exists on the server (edit mode) */
+	hazardId?: number;
 }
 
 export interface HoleNode {
@@ -168,6 +195,14 @@ export interface SegmentRecommendation {
 	skipped_node_ids: number[];
 }
 
+export interface Hazard {
+	hazard_id: number;
+	hole_id: number;
+	hazard_type: string;
+	/** Ring of [lat, lon] pairs */
+	polygon: [number, number][];
+}
+
 export interface HolePath {
 	nodes: HoleNode[];
 	edges: HoleEdge[];
@@ -176,4 +211,6 @@ export interface HolePath {
 	recommendations: SegmentRecommendation[];
 	/** Closed ring of [lat, lon] pairs tracing the fairway corridor */
 	fairway_polygon: [number, number][];
+	/** Hazard/OB areas drawn by course editors */
+	hazards: Hazard[];
 }

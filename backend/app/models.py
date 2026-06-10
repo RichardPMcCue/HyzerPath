@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, Enum
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, Enum, Text
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime, timezone
 
@@ -241,6 +241,8 @@ class HoleHazard(Base):
     hazard_id = Column(Integer, primary_key=True)
     hole_id = Column(Integer, ForeignKey("holes.hole_id"), nullable=False)
     hazard_type = Column(String, nullable=False)
+    # JSON array of [lat, lng] pairs tracing the hazard area (open ring)
+    polygon = Column(Text)
 
     hole = relationship("Hole", back_populates="hole_hazards")
 
