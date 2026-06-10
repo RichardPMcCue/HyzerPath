@@ -24,7 +24,10 @@ export function satelliteStyle(): StyleSpecification {
 		sources: {
 			satellite: {
 				type: 'raster',
-				tiles: [`${window.location.origin}/tiles/{z}/{y}/{x}`],
+				// ?v=2 busts cache entries poisoned while /tiles briefly served the
+				// SPA fallback HTML (browsers cached those 200s and MapLibre then
+				// "loads" HTML as tiles forever)
+				tiles: [`${window.location.origin}/tiles/{z}/{y}/{x}?v=2`],
 				tileSize: 256,
 				// Esri imagery runs out around z19; upscale instead of blank tiles
 				maxzoom: 19,
