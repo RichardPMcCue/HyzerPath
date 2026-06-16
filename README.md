@@ -12,7 +12,7 @@ HyzerPath is an intelligent disc golf caddie. It models each hole as a directed 
 **Frontend**
 - SvelteKit 2, Svelte 5, TypeScript
 - Tailwind CSS v4
-- MapLibre GL (Esri satellite tiles), PWA
+- MapLibre GL, PWA
 
 **Infrastructure**
 - nginx, Cloudflare Tunnel
