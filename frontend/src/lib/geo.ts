@@ -15,6 +15,27 @@ export function pointToSegmentFeet(p: Pt, a: Pt, b: Pt): number {
 }
 
 export const FAIRWAY_FIT_TOLERANCE_FT = 40;
+export const SMOOTHING_MIN_POINTS = 6; // keep in sync with backend utils.py
+
+/** Single-pass weighted moving average (0.25 prev / 0.5 self / 0.25 next)
+ *  on interior points; endpoints fixed. Corridor-outline taps zigzag laterally
+ *  and average out to the centerline. Skipped for sparse chains
+ *  (< SMOOTHING_MIN_POINTS) so deliberately placed dogleg corners survive. */
+export function smoothChain(points: Pt[]): Pt[] {
+	if (points.length < SMOOTHING_MIN_POINTS) return [...points];
+	const out: Pt[] = [points[0]];
+	for (let i = 1; i < points.length - 1; i++) {
+		const p = points[i - 1];
+		const c = points[i];
+		const n = points[i + 1];
+		out.push({
+			lat: 0.25 * p.lat + 0.5 * c.lat + 0.25 * n.lat,
+			lng: 0.25 * p.lng + 0.5 * c.lng + 0.25 * n.lng
+		});
+	}
+	out.push(points[points.length - 1]);
+	return out;
+}
 
 /** Douglas-Peucker: drop points within tolerance of the line so distance
  *  follows the best-fit fairway line, not every lateral waypoint tap. */
@@ -42,7 +63,7 @@ export function simplifyChain<T extends Pt>(
 
 /** Length in feet of the best-fit line through a chain of points. */
 export function chainDistanceFeet(points: Pt[], toleranceFt?: number): number {
-	const simplified = simplifyChain(points, toleranceFt);
+	const simplified = simplifyChain(smoothChain(points), toleranceFt);
 	let total = 0;
 	for (let i = 0; i < simplified.length - 1; i++) {
 		total += haversineFeet(

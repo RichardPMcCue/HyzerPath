@@ -254,6 +254,25 @@ def segment_crosses_polygon(a_lat, a_lon, b_lat, b_lon, polygon: list) -> bool:
 
 
 FAIRWAY_FIT_TOLERANCE_FT = 40.0
+SMOOTHING_MIN_POINTS = 6  # keep in sync with frontend geo.ts
+
+
+def smooth_chain(points: list) -> list:
+    """Single-pass weighted moving average (0.25 prev / 0.5 self / 0.25 next)
+    on interior points; endpoints fixed. Corridor-outline taps zigzag laterally
+    and average out to the centerline. Skipped for sparse chains
+    (< SMOOTHING_MIN_POINTS) so deliberately placed dogleg corners survive."""
+    if len(points) < SMOOTHING_MIN_POINTS:
+        return list(points)
+    out = [points[0]]
+    for i in range(1, len(points) - 1):
+        p, c, n = points[i - 1], points[i], points[i + 1]
+        out.append((
+            0.25 * p[0] + 0.5 * c[0] + 0.25 * n[0],
+            0.25 * p[1] + 0.5 * c[1] + 0.25 * n[1],
+        ))
+    out.append(points[-1])
+    return out
 
 
 def simplify_path(points: list, tolerance_ft: float = FAIRWAY_FIT_TOLERANCE_FT) -> list:
@@ -277,7 +296,7 @@ def simplify_path(points: list, tolerance_ft: float = FAIRWAY_FIT_TOLERANCE_FT) 
 
 def path_distance_feet(points: list, tolerance_ft: float = FAIRWAY_FIT_TOLERANCE_FT) -> float:
     """Length of the best-fit line through a chain of (lat, lng) points."""
-    simplified = simplify_path(points, tolerance_ft)
+    simplified = simplify_path(smooth_chain(points), tolerance_ft)
     return sum(
         haversine_feet(a[0], a[1], b[0], b[1])
         for a, b in zip(simplified, simplified[1:])
