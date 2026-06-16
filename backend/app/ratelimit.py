@@ -22,9 +22,6 @@ class FixedWindowLimiter:
         cutoff = now - self.window_seconds
         while hits and hits[0] <= cutoff:
             hits.popleft()
-        if not hits:
-            self._hits.pop(key, None)  # keep the dict from growing unbounded
-            hits = self._hits[key]
         if len(hits) >= self.max_requests:
             return False
         hits.append(now)

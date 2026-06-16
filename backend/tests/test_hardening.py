@@ -44,15 +44,29 @@ def test_json_formatter_includes_extra_fields():
     assert out["status"] == 200
 
 
-def test_deploy_rejects_bad_token(client):
-    # DEPLOY_SECRET unset in tests → any token is rejected, fail closed
+def test_deploy_rejects_bad_token(client, monkeypatch):
+    from app.main import deploy_limiter
+
+    # Pin the secret so the test doesn't depend on ambient env / a local .env
+    monkeypatch.setenv("DEPLOY_SECRET", "correct-secret")
+    deploy_limiter.reset()
     r = client.post("/deploy", headers={"X-Deploy-Token": "wrong"})
     assert r.status_code == 401
 
 
-def test_deploy_rate_limited(client):
+def test_deploy_fails_closed_when_secret_unset(client, monkeypatch):
     from app.main import deploy_limiter
 
+    monkeypatch.delenv("DEPLOY_SECRET", raising=False)
+    deploy_limiter.reset()
+    r = client.post("/deploy", headers={"X-Deploy-Token": "anything"})
+    assert r.status_code == 401
+
+
+def test_deploy_rate_limited(client, monkeypatch):
+    from app.main import deploy_limiter
+
+    monkeypatch.setenv("DEPLOY_SECRET", "correct-secret")
     deploy_limiter.reset()
     statuses = [
         client.post("/deploy", headers={"X-Deploy-Token": "wrong"}).status_code
