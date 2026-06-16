@@ -1,5 +1,13 @@
 # HyzerPath
 
+![Python](https://img.shields.io/badge/Python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.135-green)
+![SvelteKit](https://img.shields.io/badge/SvelteKit-2-orange)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-84%20passing-brightgreen)
+![Live](https://img.shields.io/badge/live-hp.rmccue.dev-brightgreen)
+
 HyzerPath is an intelligent disc golf caddie. It models each hole as a directed graph of nodes and edges, runs Dijkstra's algorithm to find the optimal path from tee to basket, and recommends specific discs from the player's bag for each throw segment based on their personal measured throw distances. It is live at [hp.rmccue.dev](https://hp.rmccue.dev).
 
 ## Tech stack
@@ -18,6 +26,10 @@ HyzerPath is an intelligent disc golf caddie. It models each hole as a directed 
 - nginx, Cloudflare Tunnel
 - Self-hosted LXC container, CI/CD via GitHub Actions
 
+**External APIs**
+- Open-Meteo (real-time wind data, no auth required)
+- DiscIt API (disc flight number database, write-through PostgreSQL cache)
+
 ## How it works
 
 Each hole is stored as a directed graph. Nodes are points on the hole (tee, fairway landing zones, doglegs, basket), each with a GPS coordinate. Edges connect nodes reachable in a single throw and carry a distance plus any hazards along them. A course editor places nodes on a satellite map, and edges are rebuilt as a chain from tee to basket so a route follows the real fairway instead of cutting across out of bounds.
@@ -28,6 +40,8 @@ Once the path is found, a lookahead pass merges nodes into single throws the pla
 
 Throw distances come from the player. A field measuring mode records GPS start and end points per throw, tagged backhand or forehand, and these feed the per-disc, per-style averages the engine reads.
 
+Disc flight numbers are pulled from the DiscIt API when a player searches for a disc to add to their bag, with results cached to avoid redundant external calls. Wind data is fetched from Open-Meteo at round start using the course's GPS coordinates and factored into the recommendation engine's effective distance calculation — a headwind reduces how far a disc carries, a tailwind increases it.
+
 ![HyzerPath architecture](docs/architecture.png)
 
 ## Key engineering decisions
@@ -37,6 +51,7 @@ Throw distances come from the player. A field measuring mode records GPS start a
 - **Dynamic fairway geometry.** Centerline and corridor width are computed from the placed fairway nodes at request time rather than stored as static points, so geometry stays correct as the node map is edited.
 - **Structured JSON logging.** Logs are emitted as JSON to stdout and captured by systemd, with request method, path, status, and latency on every line.
 - **Fixed-window rate limiter without Redis.** The deploy endpoint uses a small in-memory limiter, enough for a single-process server and one less service to run.
+- **External API integration with caching.** DiscIt disc data is cached after the first fetch per query so repeated searches don't hit the external API. Wind data from Open-Meteo is fetched once per round using course coordinates and applied per-segment in the recommendation engine.
 
 ## Local development
 

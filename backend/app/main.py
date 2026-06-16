@@ -117,13 +117,14 @@ async def deploy(request: Request, x_deploy_token: str = Header(...)):
     logger.info("deploy triggered", extra={"ip": ip})
     app_dir = os.environ.get("APP_DIR", "/home/hyzerpath/hyzerpath")
     try:
-        subprocess.run(
-            ["git", "-C", app_dir, "pull", "origin", "main"],
-            check=True
-        )
+        # Mirror origin exactly, never merge. `git pull` lets the box diverge
+        # (a stray commit or direct edit) and then silently wedges every future
+        # deploy; fetch + hard reset makes the server a strict read-only mirror.
+        subprocess.run(["git", "-C", app_dir, "fetch", "origin", "main"], check=True)
+        subprocess.run(["git", "-C", app_dir, "reset", "--hard", "origin/main"], check=True)
     except subprocess.CalledProcessError:
-        logger.exception("deploy git pull failed", extra={"ip": ip})
-        raise HTTPException(status_code=500, detail="git pull failed")
+        logger.exception("deploy git sync failed", extra={"ip": ip})
+        raise HTTPException(status_code=500, detail="git sync failed")
     # Detached (new session) so the systemctl restart inside the script
     # doesn't kill the deploy halfway through.
     subprocess.Popen(
