@@ -1,44 +1,61 @@
-# HyzerPath: Your Intelligent Disc Golf Caddie
+# HyzerPath
 
-Most disc golf apps tell you how far you are from the basket. HyzerPath tells you how to get there.
+HyzerPath is an intelligent disc golf caddie. It models each hole as a directed graph of nodes and edges, runs Dijkstra's algorithm to find the optimal path from tee to basket, and recommends specific discs from the player's bag for each throw segment based on their personal measured throw distances. It is live at [hp.rmccue.dev](https://hp.rmccue.dev).
 
-HyzerPath is a course-aware recommendation engine that models each hole as a series of segments, accounting for mandos, doglegs, gaps, elevation, and landing zones, then recommends the optimal sequence of throws from your bag based on your actual throw capabilities and real-time wind conditions. It doesn't just match distance to disc. It plans your route through the hole the way you think about it on the tee pad: what line, what disc, where to land, and what's left after that.
+## Tech stack
 
-Built with Python and FastAPI. Integrates with the DiscIt API for disc flight data, weather APIs for live wind conditions, and optionally with TechDisc for measured throw metrics. Course data is community-contributed starting with Austin, TX area courses.
+**Backend**
+- Python, FastAPI
+- PostgreSQL, SQLAlchemy, Alembic
+- Google OAuth, JWT auth
 
-## Key Features
+**Frontend**
+- SvelteKit 2, Svelte 5, TypeScript
+- Tailwind CSS v4
+- MapLibre GL (Esri satellite tiles), PWA
 
-- Dynamic bag management with automatic flight number lookup
-- GPS-based throw distance calculation
-- AI-powered throw recommendations based on hole pathing, real-time conditions, and your personal throw data
+**Infrastructure**
+- nginx, Cloudflare Tunnel
+- Self-hosted LXC container, CI/CD via GitHub Actions
 
-## Stack
+## How it works
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | Python, FastAPI |
-| Database | PostgreSQL |
-| ORM | SQLAlchemy |
-| Frontend | SvelteKit + TypeScript |
-| Auth | OAuth via Google, session tokens |
-| Deployment | LXC on Proxmox, Cloudflare Tunnel |
-| CI/CD | GitHub Actions |
-| External APIs | DiscIt, Weather API, Anthropic |
+Each hole is stored as a directed graph. Nodes are points on the hole (tee, fairway landing zones, doglegs, basket), each with a GPS coordinate. Edges connect nodes reachable in a single throw and carry a distance plus any hazards along them. A course editor places nodes on a satellite map, and edges are rebuilt as a chain from tee to basket so a route follows the real fairway instead of cutting across out of bounds.
 
-## Stack Justification
+To plan a hole, the engine runs Dijkstra from the tee node to the basket node. Edge weight is not raw distance, it is an estimate of throws plus penalties: an edge longer than the player's measured reach costs proportionally more than one throw, lateral distance from the fairway centerline adds a penalty scaled by fairway width, and each hazard adds a cost that varies by play mode (conservative, balanced, aggressive). The result is the lowest-cost route the player can actually execute, not just the shortest line.
 
-### Python Backend
+Once the path is found, a lookahead pass merges nodes into single throws the player can cover, respecting per-mode tolerance for cutting corners and crossing hazards. For each segment the engine scores every disc against the required distance and the shape the corridor demands, evaluating both backhand and forehand using the player's separately measured distance for each style. It returns a disc, a throw style, and a shape (hyzer, anhyzer, flex) per throw.
 
-I considered Go since it would give better raw performance and concurrency, but this app doesn't have the kind of performance demands that justify it. The recommendation engine is mostly graph traversal and scoring logic, Python handles that fine. The Anthropic SDK has a first-class Python client and all the external integrations (DiscIt, weather, auth) just land more naturally in Python. No reason to make this harder than it needs to be.
+Throw distances come from the player. A field measuring mode records GPS start and end points per throw, tagged backhand or forehand, and these feed the per-disc, per-style averages the engine reads.
 
-### SvelteKit Frontend
+![HyzerPath architecture](docs/architecture.png)
 
-React's boilerplate and ecosystem overhead felt like overkill. Vue is better but still more than I need. SvelteKit lets me build a mobile-first PWA with cleaner syntax and less framework fighting. I want to spend my time on the actual product, not wrestling with frontend tooling.
+## Key engineering decisions
 
-### FastAPI
+- **Directed graph per hole.** Nodes and edges make doglegs, mandatories, and alternate routes first-class instead of special cases, and let a standard shortest-path algorithm do the routing.
+- **Dijkstra with custom edge weights.** Weights combine estimated throw count, deviation from the fairway centerline, and mode-dependent hazard penalties, so the optimal path reflects playability, not pure distance.
+- **Dynamic fairway geometry.** Centerline and corridor width are computed from the placed fairway nodes at request time rather than stored as static points, so geometry stays correct as the node map is edited.
+- **Structured JSON logging.** Logs are emitted as JSON to stdout and captured by systemd, with request method, path, status, and latency on every line.
+- **Fixed-window rate limiter without Redis.** The deploy endpoint uses a small in-memory limiter, enough for a single-process server and one less service to run.
 
-Async-native, auto-generates OpenAPI docs, and leans on Python type hints which I'm already using everywhere else. It just fits. The API is the backbone of this whole project so I wanted something that stays out of the way and lets me move fast.
+## Local development
 
-## Running Locally
+Backend:
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload
+```
 
-Coming soon.
+Frontend:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Project status
+
+Deployed and live at [hp.rmccue.dev](https://hp.rmccue.dev). Seeded with test course data. GPS-based round tracking is functional and recommendation engine v1 is working.
