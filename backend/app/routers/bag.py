@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
+import logging
 import httpx
+
+logger = logging.getLogger("hyzerpath.bag")
 
 from app.database import get_db
 from app.models import BagDisc, Disc, DiscCatalog, ThrowMeasurement, User, UserDiscStat
@@ -66,7 +69,7 @@ async def search_discs(
             response.raise_for_status()
             discs = response.json()
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        logger.warning("DiscIt search failed", extra={"error": str(e)})
         raise HTTPException(status_code=503, detail="External API call failed")
 
     for disc in discs:

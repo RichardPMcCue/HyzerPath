@@ -1,5 +1,8 @@
+import logging
 import httpx
 from typing import Optional
+
+logger = logging.getLogger("hyzerpath.wind")
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -26,5 +29,5 @@ async def get_wind(latitude: float, longitude: float) -> Optional[dict]:
                 "direction": float(current["wind_direction_10m"]),
             }
     except Exception as e:
-        print(f"Wind lookup failed: {e}")
+        logger.warning("wind lookup failed", extra={"error": str(e)})
         return None
