@@ -27,6 +27,9 @@ app = FastAPI(
     description="Intelligent disc golf caddie",
     version="0.1.0",
     swagger_ui_parameters={"persistAuthorization": True},
+    # In prod nginx serves this app under /api, so Swagger must fetch the spec
+    # from /api/openapi.json. Set ROOT_PATH=/api on the server; unset locally.
+    root_path=os.environ.get("ROOT_PATH", ""),
 )
 
 # The SvelteKit frontend runs on a different origin
