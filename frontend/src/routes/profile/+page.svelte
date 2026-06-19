@@ -2,7 +2,10 @@
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/auth.svelte';
 	import { api } from '$lib/api';
+	import ThrowsChart from '$lib/components/ThrowsChart.svelte';
 	import type { Course, Hand, Round, ThrowStyleRow } from '$lib/types';
+
+	let tab = $state<'overview' | 'throws'>('overview');
 
 	interface TokenPayload {
 		user_id: number;
@@ -177,10 +180,28 @@
 	<h1 class="text-2xl font-bold">Profile</h1>
 </header>
 
-<main class="space-y-4 px-4 pt-2">
-	<div class="rounded-2xl border border-edge bg-card p-4">
-		<div class="flex items-center justify-between">
-			<p class="text-xs tracking-wide text-ink-dim uppercase">Signed in</p>
+<main class="px-4 pt-2">
+	<div class="flex gap-1 rounded-xl border border-edge bg-card p-1">
+		{#each [['overview', 'Overview'], ['throws', 'Throws']] as [value, label] (value)}
+			<button
+				class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition
+					{tab === value ? 'bg-accent text-surface' : 'text-ink-dim'}"
+				onclick={() => (tab = value as 'overview' | 'throws')}
+			>
+				{label}
+			</button>
+		{/each}
+	</div>
+
+	{#if tab === 'throws'}
+		<div class="mt-4">
+			<ThrowsChart />
+		</div>
+	{:else}
+		<div class="mt-4 space-y-4">
+			<div class="rounded-2xl border border-edge bg-card p-4">
+				<div class="flex items-center justify-between">
+					<p class="text-xs tracking-wide text-ink-dim uppercase">Signed in</p>
 			{#if auth.isAdmin}
 				<span class="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold tracking-wide text-accent uppercase">
 					Admin
@@ -346,10 +367,12 @@
 		</a>
 	{/if}
 
-	<button
-		class="w-full rounded-2xl border border-red-900/60 bg-red-950/40 py-3 text-sm font-semibold text-red-300 transition active:scale-[0.98]"
-		onclick={logout}
-	>
-		Sign out
-	</button>
+			<button
+				class="w-full rounded-2xl border border-red-900/60 bg-red-950/40 py-3 text-sm font-semibold text-red-300 transition active:scale-[0.98]"
+				onclick={logout}
+			>
+				Sign out
+			</button>
+		</div>
+	{/if}
 </main>

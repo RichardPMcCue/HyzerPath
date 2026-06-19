@@ -4,6 +4,7 @@
 	import type { FeatureCollection } from 'geojson';
 	import { api } from '$lib/api';
 	import { autoResize, satelliteStyle } from '$lib/map';
+	import { haversineFeet } from '$lib/geo';
 	import type { Disc, ThrowMeasurement, ThrowSession, ThrowStyle } from '$lib/types';
 
 	let mapContainer: HTMLDivElement | undefined = $state();
@@ -18,6 +19,15 @@
 	let busy = $state(false);
 	let saving = $state(false);
 	let gpsAccuracy = $state<number | null>(null);
+	let currentPos = $state<{ lat: number; lng: number } | null>(null);
+
+	// Live distance from the marked start to where the player is standing now, so
+	// the throw distance is visible before marking the landing.
+	const liveDistance = $derived(
+		session && currentPos
+			? haversineFeet(session.start_latitude, session.start_longitude, currentPos.lat, currentPos.lng)
+			: null
+	);
 
 	// Sticky BH/FH choice: field sessions are usually one style at a time
 	const STYLE_KEY = 'hyzerpath_throw_style';
@@ -70,6 +80,7 @@
 		map.addControl(geolocate, 'top-right');
 		geolocate.on('geolocate', (pos) => {
 			gpsAccuracy = pos.coords.accuracy * 3.28084;
+			currentPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
 		});
 
 		map.on('load', () => {
@@ -218,6 +229,12 @@
 				<span class="text-xs text-ink-dim">GPS ±{Math.round(gpsAccuracy)} ft</span>
 			{/if}
 		</div>
+		{#if session && liveDistance !== null && !pendingEnd}
+			<div class="mt-1 flex items-baseline gap-2">
+				<span class="text-3xl font-bold text-accent">≈ {Math.round(liveDistance)} ft</span>
+				<span class="text-xs text-ink-dim">from start — walk to your landing</span>
+			</div>
+		{/if}
 	</header>
 
 	<!-- Big satellite map -->

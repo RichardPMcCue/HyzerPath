@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { Disc, DiscItResult, DiscStat, ThrowStyle } from '$lib/types';
+	import type { Disc, DiscItResult, DiscStat, DiscType, ThrowStyle } from '$lib/types';
 	import FlightNumbers from '$lib/components/FlightNumbers.svelte';
 	import BagMatrix from '$lib/components/BagMatrix.svelte';
 
@@ -22,6 +22,7 @@
 	let editTurn = $state('');
 	let editFade = $state('');
 	let editColor = $state('#2a3832');
+	let editType = $state<DiscType>('putter');
 	let savingStat = $state(false);
 
 	// add-disc flow
@@ -31,6 +32,25 @@
 	let searching = $state(false);
 	let saving = $state(false);
 	let searchTimer: ReturnType<typeof setTimeout>;
+
+	// manual disc entry (for discs not on DiscIt)
+	let manual = $state(false);
+	let manualVals = $state({
+		name: '',
+		manufacturer: '',
+		disc_type: 'putter' as DiscType,
+		speed: '',
+		glide: '',
+		turn: '',
+		fade: ''
+	});
+
+	const DISC_TYPES: [DiscType, string][] = [
+		['putter', 'Putter'],
+		['midrange', 'Mid'],
+		['fairway_driver', 'Fairway'],
+		['distance_driver', 'Distance']
+	];
 
 	function loadBag() {
 		api
@@ -64,14 +84,16 @@
 		editTurn = disc.turn !== null ? String(disc.turn) : '';
 		editFade = disc.fade !== null ? String(disc.fade) : '';
 		editColor = disc.color || '#2a3832';
+		editType = disc.disc_type ?? 'putter';
 		editingDiscId = disc.disc_id;
 	}
 
 	async function saveDisc(discId: number) {
 		savingStat = true;
 		try {
-			// Flight numbers + color
+			// Type + flight numbers + color
 			await api.updateDisc(discId, {
+				disc_type: editType,
 				speed: editSpeed !== '' ? Number(editSpeed) : null,
 				glide: editGlide !== '' ? Number(editGlide) : null,
 				turn: editTurn !== '' ? Number(editTurn) : null,
@@ -145,6 +167,43 @@
 		}
 	}
 
+	const manualValid = $derived(manualVals.name.trim().length > 0);
+
+	async function addManualDisc() {
+		if (!manualValid) return;
+		saving = true;
+		try {
+			const num = (v: string) => (v.trim() !== '' ? Number(v) : null);
+			await api.createDisc({
+				name: manualVals.name.trim(),
+				manufacturer: manualVals.manufacturer.trim(),
+				disc_type: manualVals.disc_type,
+				speed: num(manualVals.speed),
+				glide: num(manualVals.glide),
+				turn: num(manualVals.turn),
+				fade: num(manualVals.fade)
+			});
+			manual = false;
+			adding = false;
+			query = '';
+			results = null;
+			manualVals = {
+				name: '',
+				manufacturer: '',
+				disc_type: 'putter',
+				speed: '',
+				glide: '',
+				turn: '',
+				fade: ''
+			};
+			loadBag();
+		} catch (e) {
+			error = (e as Error).message;
+		} finally {
+			saving = false;
+		}
+	}
+
 	async function removeDisc(discId: number) {
 		await api.deleteDisc(discId);
 		loadBag();
@@ -178,19 +237,37 @@
 		<h1 class="text-2xl font-bold">My Bag</h1>
 		<button
 			class="rounded-xl bg-accent px-4 py-2 text-sm font-bold text-surface transition active:scale-95"
-			onclick={() => (adding = !adding)}
+			onclick={() => {
+				adding = !adding;
+				if (!adding) manual = false;
+			}}
 		>
 			{adding ? 'Done' : '+ Add disc'}
 		</button>
 	</div>
 	{#if adding}
-		<input
-			type="search"
-			placeholder="Search any disc — e.g. Destroyer…"
-			bind:value={query}
-			oninput={onQueryInput}
-			class="mt-3 w-full rounded-xl border border-edge bg-card px-4 py-2.5 text-sm placeholder:text-ink-dim focus:border-accent focus:outline-none"
-		/>
+		{#if manual}
+			<button
+				class="mt-3 text-sm font-medium text-ink-dim transition active:scale-95"
+				onclick={() => (manual = false)}
+			>
+				← Back to search
+			</button>
+		{:else}
+			<input
+				type="search"
+				placeholder="Search any disc — e.g. Destroyer…"
+				bind:value={query}
+				oninput={onQueryInput}
+				class="mt-3 w-full rounded-xl border border-edge bg-card px-4 py-2.5 text-sm placeholder:text-ink-dim focus:border-accent focus:outline-none"
+			/>
+			<button
+				class="mt-2 text-xs font-medium text-accent transition active:scale-95"
+				onclick={() => (manual = true)}
+			>
+				Can't find it? Enter disc details manually →
+			</button>
+		{/if}
 	{:else}
 		<div class="mt-3 flex rounded-xl border border-edge bg-card p-1">
 			{#each [['list', 'List'], ['matrix', 'Matrix']] as [value, label] (value)}
@@ -207,7 +284,64 @@
 </header>
 
 <main class="px-4 pt-2">
-	{#if adding}
+	{#if adding && manual}
+		<div class="space-y-3 pt-3">
+			<div class="flex gap-2">
+				<label class="flex-1 text-xs text-ink-dim">
+					Name
+					<input
+						type="text"
+						bind:value={manualVals.name}
+						placeholder="e.g. Zone OS"
+						class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+					/>
+				</label>
+				<label class="flex-1 text-xs text-ink-dim">
+					Manufacturer
+					<input
+						type="text"
+						bind:value={manualVals.manufacturer}
+						placeholder="e.g. Discraft"
+						class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+					/>
+				</label>
+			</div>
+			<div>
+				<p class="text-xs text-ink-dim">Type</p>
+				<div class="mt-1 flex gap-1 rounded-lg border border-edge p-0.5">
+					{#each DISC_TYPES as [value, label] (value)}
+						<button
+							class="flex-1 rounded-md py-1.5 text-xs font-bold transition active:scale-95
+								{manualVals.disc_type === value ? 'bg-accent text-surface' : 'text-ink-dim'}"
+							onclick={() => (manualVals.disc_type = value)}
+						>
+							{label}
+						</button>
+					{/each}
+				</div>
+			</div>
+			<div class="flex gap-2">
+				{#each [['speed', 'Speed'], ['glide', 'Glide'], ['turn', 'Turn'], ['fade', 'Fade']] as [key, label] (key)}
+					<label class="flex-1 text-xs text-ink-dim">
+						{label}
+						<input
+							type="number"
+							step="0.5"
+							bind:value={manualVals[key as 'speed' | 'glide' | 'turn' | 'fade']}
+							class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none"
+						/>
+					</label>
+				{/each}
+			</div>
+			<button
+				class="w-full rounded-xl bg-accent py-2.5 text-sm font-bold text-surface transition active:scale-[0.98] disabled:opacity-50"
+				onclick={addManualDisc}
+				disabled={saving || !manualValid}
+			>
+				{saving ? 'Adding…' : 'Add disc'}
+			</button>
+		</div>
+	{:else if adding}
 		{#if searching}
 			<p class="pt-4 text-center text-sm text-ink-dim">Searching…</p>
 		{:else if results}
@@ -290,6 +424,18 @@
 						</button>
 						{#if editingDiscId === disc.disc_id}
 							<div class="border-t border-edge p-3.5">
+								<p class="mb-1 text-xs text-ink-dim">Disc type</p>
+								<div class="mb-3 flex gap-1 rounded-lg border border-edge p-0.5">
+									{#each DISC_TYPES as [value, label] (value)}
+										<button
+											class="flex-1 rounded-md py-1.5 text-xs font-bold transition active:scale-95
+												{editType === value ? 'bg-accent text-surface' : 'text-ink-dim'}"
+											onclick={() => (editType = value)}
+										>
+											{label}
+										</button>
+									{/each}
+								</div>
 								<div class="flex gap-1 rounded-lg border border-edge p-0.5">
 									{#each [['backhand', 'Backhand'], ['forehand', 'Forehand']] as [style, label] (style)}
 										<button

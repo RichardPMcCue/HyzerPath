@@ -80,6 +80,7 @@ export const api = {
 		}),
 
 	// --- throw measuring ---
+	getThrowSessions: () => request<ThrowSession[]>('/throws/sessions'),
 	createThrowSession: (start: { start_latitude: number; start_longitude: number; label?: string }) =>
 		request<ThrowSession>('/throws/sessions', { method: 'POST', body: JSON.stringify(start) }),
 	updateThrowSession: (
