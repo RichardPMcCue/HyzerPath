@@ -41,8 +41,10 @@ TREE_PROXIMITY_FT = 30.0
 
 # score_disc tightness penalty: how much lateral movement and forced max-effort
 # cost on a fully-tight fairway (scaled by tightness and mode).
-W_LAT = 0.5      # per unit of |turn| + fade
-W_EFFORT = 3.0   # per unit of avg→max reach (1.0 = throwing the disc's max line)
+W_LAT = 0.5      # per unit of |turn| + fade, on a fully-tight fairway
+W_EFFORT = 3.0   # per unit of avg→max reach on a tight fairway (added lateral movement)
+BASE_EFFORT_PENALTY = 0.8  # max-effort throws are less reliable, even in the open
+OVER_DISC_FT = 45.0  # "too much club": cost per foot the disc's avg overshoots the target
 
 # How much each mode cares about tunnel control. Aggressive players accept the
 # lateral spread of a max-effort line; conservative players avoid it.
@@ -56,10 +58,14 @@ MODE_TIGHTNESS_SCALE = {
 # before the jump is disallowed. Send-it mode may cut any corner; safe mode
 # basically has to follow the corridor.
 CORRIDOR_DEVIATION_FT = {
-    "conservative": 35.0,
-    "balanced": 80.0,
+    "conservative": 70.0,
+    "balanced": 110.0,
     "aggressive": float("inf"),
 }
+
+# A spike hyzer is a short, steep touch shot — never a long drive. Above this
+# distance a big finishing bend is a regular (sweeping) hyzer, not a spike.
+SPIKE_MAX_FT = 250.0
 
 # Placement and approach shots reward control: penalize disc speed since the
 # goal is landing close (C1), not covering distance.
@@ -143,7 +149,7 @@ def effective_throw_distance(base_distance: float, headwind: float) -> float:
     return base_distance - TAILWIND_FT_PER_MPH * headwind  # headwind negative -> adds
 
 
-def derive_shot_shape(finish_deg: float, disc=None, effort: float = 0.0) -> str:
+def derive_shot_shape(finish_deg: float, disc=None, effort: float = 0.0, distance: float = 0.0) -> str:
     """Maps the required finish angle plus the chosen disc's stability to a shot
     shape. finish_deg is normalized so negative = the thrower's hyzer (fade) side
     and positive = the anhyzer (turn) side, which keeps forehand / left-handed
@@ -155,9 +161,10 @@ def derive_shot_shape(finish_deg: float, disc=None, effort: float = 0.0) -> str:
     corridor reached with an understable disc is a hyzer flip."""
     net = disc_net_stability(disc) if disc is not None else 0.0
 
-    # Left / hyzer side
+    # Left / hyzer side. A sharp finish is a spike hyzer only on a short touch
+    # shot; on a drive that same bend is just a big sweeping hyzer.
     if finish_deg <= -BIG_SHAPE_THRESHOLD_DEG:
-        return "spike_hyzer"
+        return "spike_hyzer" if distance <= SPIKE_MAX_FT else "hyzer"
     if finish_deg <= -SHAPE_THRESHOLD_DEG:
         return "hyzer"
 
@@ -274,18 +281,23 @@ def disc_net_stability(disc) -> float:
 def score_disc(disc, base_distance: float, required_distance: float, desired_stability: float,
                throw_type: str = "drive", tightness: float = 0.0, effort: float = 0.0,
                mode: str = "balanced") -> float:
-    """Higher is better. Balances distance fit, flight-shape fit, control, and —
-    the key fix — fairway tightness: on a tunnel a low-lateral disc the player
-    can cover the distance with on a controlled line beats a wide-flying driver
-    they'd have to muscle to its max line."""
-    distance_score = -abs(base_distance - required_distance) / 25.0
+    """Higher is better. Each disc covers a range from its avg (controlled) up to
+    its max line; the target is reachable when it's within that range. Scoring
+    balances:
+      - too-much-club: a disc whose avg overshoots the target is harder to throw
+        accurately at the shorter distance;
+      - effort: reaching from avg toward max is less reliable (always) and adds
+        lateral movement that hurts on tight fairways (not in the open);
+      - flight-shape fit and control (placement/approach want slow, accurate discs)."""
+    over_disc = max(0.0, base_distance - required_distance)
+    distance_score = -over_disc / OVER_DISC_FT
     flight_score = -abs(disc_net_stability(disc) - desired_stability)
     speed = disc.speed if disc.speed is not None else 9.0
     control_score = -speed * CONTROL_PENALTY.get(throw_type, 0.0)
-    # Tunnels punish lateral spread and forced max-effort; open fairways don't.
     tight_scale = MODE_TIGHTNESS_SCALE.get(mode, 1.0)
-    tightness_score = -tightness * tight_scale * (W_LAT * lateral_movement(disc) + W_EFFORT * effort)
-    return distance_score + flight_score + control_score + tightness_score
+    effort_score = -(BASE_EFFORT_PENALTY + tight_scale * W_EFFORT * tightness) * effort
+    lateral_score = -tight_scale * W_LAT * tightness * lateral_movement(disc)
+    return distance_score + flight_score + control_score + effort_score + lateral_score
 
 
 def _node_has_gps(node) -> bool:
@@ -555,6 +567,11 @@ def recommend_path(
                 base = _distances.get(d.disc_id, 0) or 0
                 return effective_throw_distance(base, headwind)
 
+            def max_carry(d, _max=max_dists, _distances=distances):
+                # The top of the disc's range; fall back to avg if no max recorded
+                base = _max.get(d.disc_id) or _distances.get(d.disc_id, 0) or 0
+                return effective_throw_distance(base, headwind)
+
             def effort_for(d, _distances=distances, _max=max_dists):
                 # Effort measured against the wind-adjusted controlled and max lines
                 avg = effective_throw_distance(_distances.get(d.disc_id, 0) or 0, headwind)
@@ -564,9 +581,12 @@ def recommend_path(
             with_data = [d for d in discs if distances.get(d.disc_id)]
             if not with_data:
                 continue
-            capable = [d for d in with_data if carry(d) >= distance - REACH_TOLERANCE_FT]
+            # A disc is in play if the target falls within its range (up to its
+            # max line), so every driver that can reach competes — not just the
+            # one whose average is longest.
+            capable = [d for d in with_data if max_carry(d) >= distance - REACH_TOLERANCE_FT]
             if not capable:
-                capable = [max(with_data, key=carry)]
+                capable = [max(with_data, key=max_carry)]
 
             # Primary style wins ties; big shapes for the off-hand cost more
             priority_penalty = 0.15 * (style_priority.get(style, 1) - 1)
@@ -584,7 +604,7 @@ def recommend_path(
         _, best_disc, best_style, best_normalized, best_effort = best
 
         # Shape depends on the chosen disc: flex vs. turnover, hyzer flip vs. flat
-        shot_shape = derive_shot_shape(best_normalized, best_disc, best_effort)
+        shot_shape = derive_shot_shape(best_normalized, best_disc, best_effort, distance)
         landing_zone = landing_zone_for(distance, throw_type, is_final, mode)
         rationale = build_rationale(best_disc, shot_shape, tightness, distance, best_effort)
 

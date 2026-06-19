@@ -416,6 +416,31 @@ def test_open_fairway_allows_wide_disc():
     assert "open" in recs[0].rationale
 
 
+def test_spike_hyzer_only_on_short_throws():
+    """A spike hyzer is a short touch shot; a long throw with the same finishing
+    bend is a regular sweeping hyzer, not a spike."""
+    disc = FakeDisc(1, "Firebird", fade=4.0, turn=0.0)
+    assert derive_shot_shape(-55.0, disc, distance=100) == "spike_hyzer"
+    assert derive_shot_shape(-55.0, disc, distance=300) == "hyzer"
+
+
+def test_disc_competes_by_max_range_not_just_average():
+    """A driver whose average falls short but whose max line reaches still
+    competes (the disc covers a range avg..max), and beats a longer disc that
+    would overshoot the target — so it's not always the single longest disc."""
+    nodes, edges = straight_north_path(400, 2)
+    dd3 = FakeDisc(1, "DD3", fade=2.0, turn=-1.0, speed=12.0)             # avg 380, max 480
+    dimension = FakeDisc(2, "Dimension", fade=2.0, turn=-3.0, speed=14.5)  # avg 450, overshoots
+    recs = recommend_path(
+        path_nodes=nodes, edge_lookup=edge_lookup_for(edges),
+        discs=[dimension, dd3],            # longest disc first to prove scoring wins
+        disc_distances={1: 380, 2: 450},
+        disc_max_distances={1: 480, 2: 498},
+        mode="balanced",
+    )
+    assert recs[0].disc == "Test DD3"
+
+
 def test_hyzer_flip_for_understable_reach_in_tunnel():
     """An understable disc thrown toward its max on a straight line flips and
     rides — labeled a hyzer flip, the distance-efficient tunnel line."""

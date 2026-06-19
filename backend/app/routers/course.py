@@ -355,8 +355,13 @@ async def get_path(
         style_priority=style_priority,
         allowed_styles=allowed_styles,
         style_hands=style_hands,
+        # Tightness uses only an explicitly-tagged corridor width. The dynamic
+        # width estimate measures the spacing between sequential path nodes, not
+        # the real fairway width, so it would make every densely-mapped hole look
+        # like a tunnel — trees are the reliable tightness signal until a real
+        # width is tagged.
         fairway_widths={
-            (e.from_node_id, e.to_node_id): effective_fairway_width(e)
+            (e.from_node_id, e.to_node_id): e.fairway_width
             for e in edges
         },
         hazard_polygons=[
