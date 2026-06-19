@@ -36,13 +36,9 @@ Each hole is stored as a directed graph. Nodes are points on the hole (tee, fair
 
 To plan a hole, the engine runs Dijkstra from the tee node to the basket node. Edge weight is not raw distance, it is an estimate of throws plus penalties: an edge longer than the player's measured reach costs proportionally more than one throw, lateral distance from the fairway centerline adds a penalty scaled by fairway width, and each hazard adds a cost that varies by play mode (conservative, balanced, aggressive). The result is the lowest-cost route the player can actually execute, not just the shortest line.
 
-Once the path is found, a lookahead pass merges nodes into single throws the player can cover, respecting per-mode tolerance for cutting corners and crossing hazards. For each segment the engine scores every disc against four things: the required distance, the shape the corridor demands, the tightness of the fairway (derived from the corridor width and any mapped tree areas crowding the throw line), and how hard the player has to reach. A controlled throw sits at the disc's measured average; reaching toward its measured max implies the added lateral movement of a max-effort line. On a tight wooded fairway this pushes selection toward a controllable disc with low lateral movement (`|turn| + fade`); on an open fairway the wider, longer disc is free to win. Backhand and forehand are both evaluated using the player's separately measured distance for each style.
+Once the path is found, a lookahead pass merges nodes into single throws the player can cover. The engine then scores every disc per segment on distance fit, the shape the corridor demands, and fairway tightness, evaluating both backhand and forehand from the player's per-style distances. Each throw returns a disc, a throw style, a shot shape, and a target set by the play mode — from a safe par putt to a Circle 1 birdie look.
 
-The three play modes map to scoring intent rather than just distance: conservative leaves a safe putt (Circle 1 if reachable, otherwise lay up to Circle 2), balanced takes a birdie look when it doesn't add bogey risk, and aggressive targets a Circle 1 putt for birdie. Each throw returns a disc with its flight numbers (so two copies of one mold at different wear can be told apart), a throw style, a shot shape (straight, hyzer, anhyzer, flex, turnover, hyzer flip, or spike hyzer — chosen from both the corridor bend and the disc's stability), an intended landing zone, and a one-line rationale.
-
-Throw distances come from the player. A field measuring mode records GPS start and end points per throw, tagged backhand or forehand, and these feed the per-disc, per-style averages the engine reads.
-
-Disc flight numbers are pulled from the DiscIt API when a player searches for a disc to add to their bag, with results cached to avoid redundant external calls. Wind data is fetched from Open-Meteo at round start using the course's GPS coordinates and factored into the recommendation engine's effective distance calculation — a headwind reduces how far a disc carries, a tailwind increases it.
+Throw distances come from the player: a field measuring mode records GPS start and end points per throw, tagged backhand or forehand, feeding the per-disc, per-style averages the engine reads. Wind from Open-Meteo is folded into effective distance at round start.
 
 ![HyzerPath architecture](docs/architecture.png)
 
@@ -50,11 +46,10 @@ Disc flight numbers are pulled from the DiscIt API when a player searches for a 
 
 - **Directed graph per hole.** Nodes and edges make doglegs, mandatories, and alternate routes first-class instead of special cases, and let a standard shortest-path algorithm do the routing.
 - **Dijkstra with custom edge weights.** Weights combine estimated throw count, deviation from the fairway centerline, and mode-dependent hazard penalties, so the optimal path reflects playability, not pure distance.
-- **Fairway-aware disc selection.** Disc choice weighs the corridor's tightness (width plus mapped tree areas) against each disc's lateral movement and how far the player must reach toward its max line, so a tunnel gets a controllable disc and an open hole gets the longer one — not just the fastest disc that covers the distance.
+- **Fairway-aware disc selection.** Disc choice weighs corridor tightness against each disc's lateral movement and reach, so a tunnel gets a controllable disc and an open hole the longer one.
 - **Dynamic fairway geometry.** Centerline and corridor width are computed from the placed fairway nodes at request time rather than stored as static points, so geometry stays correct as the node map is edited.
 - **Structured JSON logging.** Logs are emitted as JSON to stdout and captured by systemd, with request method, path, status, and latency on every line.
 - **Fixed-window rate limiter without Redis.** The deploy endpoint uses a small in-memory limiter, enough for a single-process server and one less service to run.
-- **External API integration with caching.** DiscIt disc data is cached after the first fetch per query so repeated searches don't hit the external API. Wind data from Open-Meteo is fetched once per round using course coordinates and applied per-segment in the recommendation engine.
 
 ## Local development
 
