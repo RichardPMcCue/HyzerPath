@@ -189,8 +189,16 @@ export interface HoleEdge {
 	fairway_width: number | null;
 }
 
-export type ShotShape = 'straight' | 'hyzer' | 'anhyzer' | 'spike_hyzer' | 'flex';
+export type ShotShape =
+	| 'straight'
+	| 'hyzer'
+	| 'anhyzer'
+	| 'spike_hyzer'
+	| 'flex'
+	| 'hyzer_flip'
+	| 'turnover';
 export type ThrowType = 'drive' | 'placement' | 'approach' | 'putt';
+export type LandingZone = 'fairway' | 'c1' | 'c2' | 'c3' | 'basket';
 export type CaddieMode = 'conservative' | 'balanced' | 'aggressive';
 
 export interface SegmentRecommendation {
@@ -201,6 +209,14 @@ export interface SegmentRecommendation {
 	shot_shape: ShotShape;
 	throw_style: ThrowStyle;
 	throw_type: ThrowType;
+	landing_zone: LandingZone;
+	rationale: string;
+	// Flight numbers of the recommended disc (distinguishes copies of a mold)
+	speed: number | null;
+	glide: number | null;
+	turn: number | null;
+	fade: number | null;
+	wear: number | null;
 	from_node_id: number;
 	to_node_id: number;
 	hazards: string[];

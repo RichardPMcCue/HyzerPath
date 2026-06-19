@@ -111,7 +111,37 @@ def test_derive_shot_shape():
     assert derive_shot_shape(-20.0) == "hyzer"
     assert derive_shot_shape(20.0) == "anhyzer"
     assert derive_shot_shape(-55.0) == "spike_hyzer"
-    assert derive_shot_shape(55.0) == "flex"
+
+
+def test_derive_shot_shape_depends_on_disc():
+    overstable = FakeDisc(1, "Firebird", fade=3.0, turn=0.0)   # net +3
+    understable = FakeDisc(2, "Sidewinder", fade=1.0, turn=-3.0)  # net -2
+    # A right-bending corridor: overstable disc flexes back, understable holds it
+    assert derive_shot_shape(55.0, overstable) == "flex"
+    assert derive_shot_shape(55.0, understable) == "turnover"
+    # A straight corridor reached with an understable disc is a hyzer flip
+    assert derive_shot_shape(0.0, understable, effort=0.5) == "hyzer_flip"
+    # ...but a controlled (low-effort) understable throw is just a flat line
+    assert derive_shot_shape(0.0, understable, effort=0.0) == "straight"
+
+
+def test_throw_effort_controlled_vs_max():
+    from app.recommendation import throw_effort
+    assert throw_effort(250, 300, 350) == 0.0      # inside the controlled line
+    assert throw_effort(325, 300, 350) == pytest.approx(0.5)  # halfway to max
+    assert throw_effort(350, 300, 350) == pytest.approx(1.0)  # the max line
+    assert throw_effort(400, 300, 350) > 1.0       # beyond what the disc covers
+
+
+def test_fairway_tightness_from_width_and_trees():
+    from app.recommendation import fairway_tightness
+    assert fairway_tightness(80, None, None) == 0.0    # wide open
+    assert fairway_tightness(25, None, None) == pytest.approx(1.0)  # tunnel
+    assert 0.0 < fairway_tightness(45, None, None) < 1.0
+    # A wide fairway with trees hugging the throw line still plays tight
+    line = (0.0, 0.0, 0.001, 0.0)
+    trees = [[[0.0005, 0.00002]]]  # ~7ft off the line
+    assert fairway_tightness(80, line, trees) > 0.5
 
 
 def test_disc_net_stability():
@@ -340,3 +370,87 @@ def test_fairway_polygon_buffers_centerline():
 def test_fairway_polygon_needs_two_points():
     from app.utils import compute_fairway_polygon
     assert compute_fairway_polygon([FakeNode(1, lat=1.0, lon=1.0)], []) == []
+
+
+# --- fairway-aware disc selection (Bug 1) ---
+
+# Owner's example: 420 ft hole. DD3 (12/6/-1/2) is the right tunnel disc over a
+# wide-flying Dimension (14/5/-3/2).
+def dd3():
+    return FakeDisc(1, "DD3", fade=2.0, turn=-1.0, speed=12.0)  # lateral 3, net +1
+
+
+def dimension():
+    return FakeDisc(2, "Dimension", fade=2.0, turn=-3.0, speed=14.0)  # lateral 5, net -1
+
+
+def test_tunnel_prefers_low_lateral_disc():
+    """In a tight wooded corridor the controllable DD3 beats the wide Dimension,
+    even though both cover the distance on a controlled line."""
+    nodes, edges = straight_north_path(430, 3)  # two 430 ft throws; test the drive
+    widths = {(1, 2): 28, (2, 3): 28}  # tunnel
+    recs = recommend_path(
+        path_nodes=nodes, edge_lookup=edge_lookup_for(edges),
+        discs=[dd3(), dimension()],
+        disc_distances={1: 430, 2: 430},      # both reach controlled
+        disc_max_distances={1: 460, 2: 470},
+        fairway_widths=widths, mode="balanced",
+    )
+    assert recs[0].disc == "Test DD3"
+    assert "tunnel" in recs[0].rationale
+
+
+def test_open_fairway_allows_wide_disc():
+    """On an open fairway there's no tunnel penalty, so the longer, faster disc
+    is used to cover a distance the DD3 can't reach on a controlled line."""
+    nodes, edges = straight_north_path(450, 3)
+    widths = {(1, 2): 90, (2, 3): 90}  # open
+    recs = recommend_path(
+        path_nodes=nodes, edge_lookup=edge_lookup_for(edges),
+        discs=[dd3(), dimension()],
+        disc_distances={1: 425, 2: 450},      # DD3 can't reach 450
+        disc_max_distances={1: 430, 2: 470},
+        fairway_widths=widths, mode="balanced",
+    )
+    assert recs[0].disc == "Test Dimension"
+    assert "open" in recs[0].rationale
+
+
+def test_hyzer_flip_for_understable_reach_in_tunnel():
+    """An understable disc thrown toward its max on a straight line flips and
+    rides — labeled a hyzer flip, the distance-efficient tunnel line."""
+    nodes, edges = straight_north_path(380, 2)
+    understable = FakeDisc(1, "Leopard", fade=1.0, turn=-3.0, speed=7.0)  # net -2
+    recs = recommend_path(
+        path_nodes=nodes, edge_lookup=edge_lookup_for(edges),
+        discs=[understable],
+        disc_distances={1: 370}, disc_max_distances={1: 410},  # reaching toward max
+        fairway_widths={(1, 2): 25}, mode="balanced",
+    )
+    assert recs[0].shot_shape == "hyzer_flip"
+
+
+# --- risk-mode landing zones (Bug 3) ---
+
+def test_landing_zone_by_mode():
+    from app.recommendation import landing_zone_for
+    assert landing_zone_for(30, "putt", True, "balanced") == "c1"
+    assert landing_zone_for(50, "putt", True, "balanced") == "c2"
+    assert landing_zone_for(120, "approach", True, "aggressive") == "c1"
+    assert landing_zone_for(120, "approach", True, "conservative") == "c2"
+    assert landing_zone_for(200, "drive", False, "aggressive") == "fairway"
+
+
+def test_recommendation_carries_flight_numbers_and_zone():
+    """The card needs the recommended disc's numbers (to tell two copies of a
+    mold apart) and an intended landing zone."""
+    nodes, edges = straight_north_path(30, 2)  # a 30 ft putt
+    putter = FakeDisc(1, "Judge", fade=0.0, turn=0.0, speed=2.0)
+    recs = recommend_path(
+        path_nodes=nodes, edge_lookup=edge_lookup_for(edges),
+        discs=[putter], disc_distances={1: 220}, mode="balanced",
+    )
+    assert recs[0].speed == 2.0
+    assert recs[0].turn == 0.0
+    assert recs[0].fade == 0.0
+    assert recs[0].landing_zone == "c1"

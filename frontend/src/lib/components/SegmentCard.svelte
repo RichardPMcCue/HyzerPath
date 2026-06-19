@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { SegmentRecommendation } from '$lib/types';
+	import FlightNumbers from './FlightNumbers.svelte';
 
 	let { rec, index }: { rec: SegmentRecommendation; index: number } = $props();
 
@@ -8,7 +9,9 @@
 		hyzer: { label: 'Hyzer', classes: 'bg-emerald-950 text-emerald-300', arrow: 'M14 19c0-6-1-10-6-12m0 0h5M8 7v5' },
 		spike_hyzer: { label: 'Spike Hyzer', classes: 'bg-emerald-950 text-emerald-200', arrow: 'M16 19C16 11 13 7 6 6m0 0h6M6 6v6' },
 		anhyzer: { label: 'Anhyzer', classes: 'bg-amber-950 text-amber-300', arrow: 'M10 19c0-6 1-10 6-12m0 0h-5m5 0v5' },
-		flex: { label: 'Flex', classes: 'bg-orange-950 text-orange-300', arrow: 'M8 19c4-2 4-10 8-12m0 0h-5m5 0v5' }
+		flex: { label: 'Flex', classes: 'bg-orange-950 text-orange-300', arrow: 'M8 19c4-2 4-10 8-12m0 0h-5m5 0v5' },
+		hyzer_flip: { label: 'Hyzer Flip', classes: 'bg-teal-950 text-teal-300', arrow: 'M12 19c-2-5-2-9 0-12m0 0-3 4m3-4 3 4' },
+		turnover: { label: 'Turnover', classes: 'bg-yellow-950 text-yellow-300', arrow: 'M9 19c1-6 4-10 9-11m0 0-4-1m4 1-1 4' }
 	};
 
 	const shape = $derived(shapeStyle[rec.shot_shape] ?? shapeStyle.straight);
@@ -23,6 +26,16 @@
 	const isPutt = $derived(rec.throw_type === 'putt');
 	// Inside C1 it's a putt; C1–C2 (33–66 ft) is a jump putt
 	const isJumpPutt = $derived(isPutt && rec.distance > 35);
+
+	// Intended landing zone for the approach (where the throw should leave you)
+	const zoneLabel: Record<string, string> = {
+		c1: 'C1 look',
+		c2: 'C2 look',
+		c3: 'C3 look',
+		basket: 'Parked'
+	};
+	const showZone = $derived(!isPutt && rec.landing_zone in zoneLabel);
+	const hasWear = $derived(rec.wear != null && rec.wear > 0);
 </script>
 
 <div class="rounded-2xl border border-edge bg-card p-4">
@@ -69,8 +82,29 @@
 		{/if}
 	</div>
 
-	{#if rec.hazards.length > 0 || rec.skipped_node_ids.length > 0}
+	{#if !isPutt}
+		<!-- Flight numbers of the recommended disc, so two copies of one mold at
+		     different wear can be told apart -->
+		<div class="mt-3 flex items-center gap-2">
+			<FlightNumbers speed={rec.speed} glide={rec.glide} turn={rec.turn} fade={rec.fade} />
+			{#if hasWear}
+				<span class="rounded-md bg-card-raised px-1.5 py-0.5 text-[11px] font-medium text-ink-dim" title="Wear">
+					wear {rec.wear}
+				</span>
+			{/if}
+		</div>
+		{#if rec.rationale}
+			<p class="mt-2 text-[11px] leading-snug text-ink-dim">{rec.rationale}</p>
+		{/if}
+	{/if}
+
+	{#if showZone || rec.hazards.length > 0 || rec.skipped_node_ids.length > 0}
 		<div class="mt-3 flex flex-wrap gap-1.5">
+			{#if showZone}
+				<span class="rounded-full bg-accent/15 px-2.5 py-0.5 text-[11px] font-semibold text-accent">
+					🎯 {zoneLabel[rec.landing_zone]}
+				</span>
+			{/if}
 			{#each rec.hazards as hazard (hazard)}
 				<span class="rounded-full bg-red-950/80 px-2.5 py-0.5 text-[11px] font-medium text-red-300">
 					⚠ {hazard}

@@ -350,10 +350,15 @@ async def get_path(
         wind_direction=resolved_wind_direction,
         mode=mode,
         style_distances=style_distances,
+        style_max_distances=style_max,
         hand=hand,
         style_priority=style_priority,
         allowed_styles=allowed_styles,
         style_hands=style_hands,
+        fairway_widths={
+            (e.from_node_id, e.to_node_id): effective_fairway_width(e)
+            for e in edges
+        },
         hazard_polygons=[
             (h.hazard_type, hazard_polygon(h))
             for h in hole.hole_hazards
