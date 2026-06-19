@@ -11,7 +11,8 @@
 		color,
 		throwStyle,
 		createdAt,
-		onclose
+		onclose,
+		ondelete
 	}: {
 		start: { lat: number; lng: number };
 		end: { lat: number; lng: number };
@@ -21,7 +22,10 @@
 		throwStyle: string | null;
 		createdAt: string;
 		onclose: () => void;
+		ondelete: () => void;
 	} = $props();
+
+	let confirmingDelete = $state(false);
 
 	let mapContainer = $state<HTMLDivElement>();
 	let map: maplibregl.Map | null = null;
@@ -254,6 +258,12 @@
 			disabled={exporting || !mapReady}
 		>
 			{exporting ? 'Preparing…' : 'Save image'}
+		</button>
+		<button
+			class="mt-2 w-full rounded-2xl border border-red-900/60 bg-red-950/40 py-3 text-sm font-semibold text-red-300 transition active:scale-[0.98]"
+			onclick={() => (confirmingDelete ? ondelete() : (confirmingDelete = true))}
+		>
+			{confirmingDelete ? 'Tap again to delete this throw' : 'Delete throw'}
 		</button>
 	</div>
 </div>

@@ -70,6 +70,23 @@ export interface RoundStats {
 	parked: number;
 }
 
+export interface LifetimeStats {
+	rounds_played: number;
+	holes_with_throws: number;
+	c1_putts_made: number;
+	c1_putts_attempted: number;
+	c1x_putts_made: number;
+	c1x_putts_attempted: number;
+	c2_putts_made: number;
+	c2_putts_attempted: number;
+	fairway_hits: number;
+	fairway_attempts: number;
+	parked: number;
+	gir_c1: number;
+	gir_c2: number;
+	gir_attempts: number;
+}
+
 export interface ThrowMeasurement {
 	throw_id: number;
 	session_id: number;

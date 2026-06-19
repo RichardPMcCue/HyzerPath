@@ -33,16 +33,25 @@
 	let saving = $state(false);
 	let searchTimer: ReturnType<typeof setTimeout>;
 
-	// manual disc entry (for discs not on DiscIt)
+	// manual disc entry (for discs not on DiscIt). Flight numbers are number|null
+	// because `<input type="number">` binds a number, not a string.
 	let manual = $state(false);
-	let manualVals = $state({
+	let manualVals = $state<{
+		name: string;
+		manufacturer: string;
+		disc_type: DiscType;
+		speed: number | null;
+		glide: number | null;
+		turn: number | null;
+		fade: number | null;
+	}>({
 		name: '',
 		manufacturer: '',
-		disc_type: 'putter' as DiscType,
-		speed: '',
-		glide: '',
-		turn: '',
-		fade: ''
+		disc_type: 'putter',
+		speed: null,
+		glide: null,
+		turn: null,
+		fade: null
 	});
 
 	const DISC_TYPES: [DiscType, string][] = [
@@ -173,15 +182,14 @@
 		if (!manualValid) return;
 		saving = true;
 		try {
-			const num = (v: string) => (v.trim() !== '' ? Number(v) : null);
 			await api.createDisc({
 				name: manualVals.name.trim(),
 				manufacturer: manualVals.manufacturer.trim(),
 				disc_type: manualVals.disc_type,
-				speed: num(manualVals.speed),
-				glide: num(manualVals.glide),
-				turn: num(manualVals.turn),
-				fade: num(manualVals.fade)
+				speed: manualVals.speed,
+				glide: manualVals.glide,
+				turn: manualVals.turn,
+				fade: manualVals.fade
 			});
 			manual = false;
 			adding = false;
@@ -191,10 +199,10 @@
 				name: '',
 				manufacturer: '',
 				disc_type: 'putter',
-				speed: '',
-				glide: '',
-				turn: '',
-				fade: ''
+				speed: null,
+				glide: null,
+				turn: null,
+				fade: null
 			};
 			loadBag();
 		} catch (e) {
@@ -326,6 +334,7 @@
 						{label}
 						<input
 							type="number"
+							inputmode="decimal"
 							step="0.5"
 							bind:value={manualVals[key as 'speed' | 'glide' | 'turn' | 'fade']}
 							class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none"
@@ -472,22 +481,22 @@
 								<div class="mt-2 flex items-end gap-2">
 									<label class="flex-1 text-xs text-ink-dim">
 										Speed
-										<input type="number" step="0.5" bind:value={editSpeed}
+										<input type="number" inputmode="decimal" step="0.5" bind:value={editSpeed}
 											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none" />
 									</label>
 									<label class="flex-1 text-xs text-ink-dim">
 										Glide
-										<input type="number" step="0.5" bind:value={editGlide}
+										<input type="number" inputmode="decimal" step="0.5" bind:value={editGlide}
 											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none" />
 									</label>
 									<label class="flex-1 text-xs text-ink-dim">
 										Turn
-										<input type="number" step="0.5" bind:value={editTurn}
+										<input type="number" inputmode="decimal" step="0.5" bind:value={editTurn}
 											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none" />
 									</label>
 									<label class="flex-1 text-xs text-ink-dim">
 										Fade
-										<input type="number" step="0.5" bind:value={editFade}
+										<input type="number" inputmode="decimal" step="0.5" bind:value={editFade}
 											class="mt-1 w-full rounded-lg border border-edge bg-card-raised px-2 py-2 text-center text-sm text-ink focus:border-accent focus:outline-none" />
 									</label>
 									<label class="text-xs text-ink-dim">

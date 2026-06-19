@@ -11,6 +11,7 @@ import type {
 	HoleEdge,
 	HoleNode,
 	HolePath,
+	LifetimeStats,
 	Me,
 	Round,
 	RoundHoleScore,
@@ -254,7 +255,8 @@ export const api = {
 	deleteRoundThrow: (roundId: number, roundThrowId: number) =>
 		request(`/rounds/${roundId}/throws/${roundThrowId}`, { method: 'DELETE' }),
 	getRoundStats: (roundId: number) =>
-		request<RoundStats>(`/rounds/${roundId}/stats`)
+		request<RoundStats>(`/rounds/${roundId}/stats`),
+	getLifetimeStats: () => request<LifetimeStats>('/rounds/stats/lifetime')
 };
 
 export function loginUrl(): string {

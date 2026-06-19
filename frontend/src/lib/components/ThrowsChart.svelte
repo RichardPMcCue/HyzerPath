@@ -58,6 +58,16 @@
 		['furthest', 'Furthest'],
 		['shortest', 'Shortest']
 	];
+
+	async function deleteThrow(row: ThrowRow) {
+		try {
+			await api.deleteThrow(row.t.session_id, row.t.throw_id);
+			rows = (rows ?? []).filter((r) => r.t.throw_id !== row.t.throw_id);
+			shareRow = null;
+		} catch (e) {
+			error = (e as Error).message;
+		}
+	}
 </script>
 
 {#if error}
@@ -144,5 +154,6 @@
 		throwStyle={shareRow.t.throw_style}
 		createdAt={shareRow.t.created_at}
 		onclose={() => (shareRow = null)}
+		ondelete={() => shareRow && deleteThrow(shareRow)}
 	/>
 {/if}

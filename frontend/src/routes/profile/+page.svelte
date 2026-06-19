@@ -3,9 +3,10 @@
 	import { auth } from '$lib/auth.svelte';
 	import { api } from '$lib/api';
 	import ThrowsChart from '$lib/components/ThrowsChart.svelte';
+	import ProfileStats from '$lib/components/ProfileStats.svelte';
 	import type { Course, Hand, Round, ThrowStyleRow } from '$lib/types';
 
-	let tab = $state<'overview' | 'throws'>('overview');
+	let tab = $state<'overview' | 'throws' | 'stats'>('overview');
 
 	interface TokenPayload {
 		user_id: number;
@@ -182,11 +183,11 @@
 
 <main class="px-4 pt-2">
 	<div class="flex gap-1 rounded-xl border border-edge bg-card p-1">
-		{#each [['overview', 'Overview'], ['throws', 'Throws']] as [value, label] (value)}
+		{#each [['overview', 'Overview'], ['throws', 'Throws'], ['stats', 'Stats']] as [value, label] (value)}
 			<button
 				class="flex-1 rounded-lg py-1.5 text-xs font-semibold transition
 					{tab === value ? 'bg-accent text-surface' : 'text-ink-dim'}"
-				onclick={() => (tab = value as 'overview' | 'throws')}
+				onclick={() => (tab = value as 'overview' | 'throws' | 'stats')}
 			>
 				{label}
 			</button>
@@ -196,6 +197,10 @@
 	{#if tab === 'throws'}
 		<div class="mt-4">
 			<ThrowsChart />
+		</div>
+	{:else if tab === 'stats'}
+		<div class="mt-4">
+			<ProfileStats />
 		</div>
 	{:else}
 		<div class="mt-4 space-y-4">

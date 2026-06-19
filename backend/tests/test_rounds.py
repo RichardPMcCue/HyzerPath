@@ -239,3 +239,48 @@ def test_round_setup_options(client):
 
     # Invalid values rejected
     assert client.post("/rounds", json={"course_id": cid, "tracking_mode": "yolo"}).status_code == 400
+
+
+def test_lifetime_stats_empty(client):
+    """No rounds yet -> all zeros, and /rounds/stats resolves to the lifetime
+    endpoint (not the /{round_id}/stats route)."""
+    stats = client.get("/rounds/stats/lifetime").json()
+    assert stats["rounds_played"] == 0
+    assert stats["holes_with_throws"] == 0
+    assert stats["c1_putts_attempted"] == 0
+    assert stats["gir_attempts"] == 0
+
+
+def test_lifetime_stats_aggregate(client):
+    """Lifetime stats aggregate across rounds, including C1X and GIR."""
+    cid, _ = seed_course(client)
+    hid, _ = seed_mapped_hole(client, cid)  # par 3 -> regulation = 1 throw
+    rid = client.post("/rounds", json={"course_id": cid}).json()["round_id"]
+
+    tee_lat = 40.0
+    basket_lat = 40.0 + 300 / 364000
+    drive_end = 40.0 + 200 / 364000        # 200ft, in the corridor, short of the green
+    putt_start = basket_lat - 20 / 364000  # 20ft out: C1, and outside the C1X gimme range
+
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 1, "start_latitude": tee_lat, "start_longitude": -105.0,
+        "end_latitude": drive_end, "end_longitude": -105.0})
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 2, "start_latitude": drive_end, "start_longitude": -105.0,
+        "end_latitude": putt_start, "end_longitude": -105.0})
+    client.post(f"/rounds/{rid}/holes/{hid}/throws", json={
+        "throw_number": 3, "is_holed": True,
+        "start_latitude": putt_start, "start_longitude": -105.0,
+        "end_latitude": basket_lat, "end_longitude": -105.0})
+
+    stats = client.get("/rounds/stats/lifetime").json()
+    assert stats["rounds_played"] == 1
+    assert stats["holes_with_throws"] == 1
+    assert stats["c1_putts_attempted"] == 1
+    assert stats["c1_putts_made"] == 1
+    assert stats["c1x_putts_attempted"] == 1  # 20ft putt is outside the 11ft gimme range
+    assert stats["c1x_putts_made"] == 1
+    assert stats["fairway_hits"] == 1
+    assert stats["gir_attempts"] == 1
+    # Green reached on throw 2, but par-3 regulation is 1 throw -> not in reg
+    assert stats["gir_c1"] == 0

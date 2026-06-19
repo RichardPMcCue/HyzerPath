@@ -26,3 +26,12 @@ html {
 body {
 	overscroll-behavior-y: none;
 }
+
+/* iOS auto-zooms a focused field whose text is under 16px. Keep all form
+   controls at >= 16px to stop the zoom. Unlayered so it wins over Tailwind's
+   text-sm/text-xs utilities (which live in @layer utilities). */
+input,
+textarea,
+select {
+	font-size: 16px;
+}

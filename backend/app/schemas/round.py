@@ -68,3 +68,21 @@ class RoundStatsResponse(BaseModel):
     fairway_hits: int
     fairway_attempts: int
     parked: int
+
+
+class LifetimeStatsResponse(BaseModel):
+    """Aggregated career stats across all of the player's recorded rounds."""
+    rounds_played: int
+    holes_with_throws: int
+    c1_putts_made: int
+    c1_putts_attempted: int
+    c1x_putts_made: int
+    c1x_putts_attempted: int
+    c2_putts_made: int
+    c2_putts_attempted: int
+    fairway_hits: int
+    fairway_attempts: int
+    parked: int
+    gir_c1: int
+    gir_c2: int
+    gir_attempts: int
