@@ -1,7 +1,7 @@
 type Pt = { lat: number; lng: number };
 
 /** Distance in feet from a point to a segment (local planar projection). */
-export function pointToSegmentFeet(p: Pt, a: Pt, b: Pt): number {
+function pointToSegmentFeet(p: Pt, a: Pt, b: Pt): number {
 	const latFt = 364000;
 	const lonFt = 364000 * Math.cos((p.lat * Math.PI) / 180);
 	const px = (p.lng - a.lng) * lonFt;
@@ -21,7 +21,7 @@ export const SMOOTHING_MIN_POINTS = 6; // keep in sync with backend utils.py
  *  on interior points; endpoints fixed. Corridor-outline taps zigzag laterally
  *  and average out to the centerline. Skipped for sparse chains
  *  (< SMOOTHING_MIN_POINTS) so deliberately placed dogleg corners survive. */
-export function smoothChain(points: Pt[]): Pt[] {
+function smoothChain(points: Pt[]): Pt[] {
 	if (points.length < SMOOTHING_MIN_POINTS) return [...points];
 	const out: Pt[] = [points[0]];
 	for (let i = 1; i < points.length - 1; i++) {
@@ -39,7 +39,7 @@ export function smoothChain(points: Pt[]): Pt[] {
 
 /** Douglas-Peucker: drop points within tolerance of the line so distance
  *  follows the best-fit fairway line, not every lateral waypoint tap. */
-export function simplifyChain<T extends Pt>(
+function simplifyChain<T extends Pt>(
 	points: T[],
 	toleranceFt: number = FAIRWAY_FIT_TOLERANCE_FT
 ): T[] {

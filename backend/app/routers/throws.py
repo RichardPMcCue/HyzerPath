@@ -10,7 +10,6 @@ from app.schemas import (
     ThrowResponse,
     ThrowSessionCreate,
     ThrowSessionResponse,
-    ThrowSessionUpdate,
 )
 from app.utils import haversine_feet
 
@@ -93,22 +92,6 @@ async def list_sessions(db: Session = Depends(get_db), current_user: User = Depe
 @router.get("/sessions/{session_id}", response_model=ThrowSessionResponse)
 async def get_session(session_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return _get_session(session_id, db, current_user)
-
-
-@router.patch("/sessions/{session_id}", response_model=ThrowSessionResponse)
-async def update_session(
-    session_id: int,
-    session_in: ThrowSessionUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    session = _get_session(session_id, db, current_user)
-    for key, value in session_in.model_dump().items():
-        if value is not None:
-            setattr(session, key, value)
-    db.commit()
-    db.refresh(session)
-    return session
 
 
 @router.delete("/sessions/{session_id}")

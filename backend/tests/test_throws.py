@@ -95,15 +95,6 @@ def test_delete_throw_resyncs_stats(client):
     assert stats[0]["max_distance"] == pytest.approx(280, rel=0.02)
 
 
-def test_update_session_start_point(client):
-    session = make_session(client)
-    response = client.patch(f"/throws/sessions/{session['session_id']}", json={
-        "start_latitude": 41.0,
-        "start_longitude": -106.0
-    })
-    assert response.status_code == 200
-    assert response.json()["start_latitude"] == 41.0
-
 
 def test_throw_with_unknown_disc_404(client):
     session = make_session(client)

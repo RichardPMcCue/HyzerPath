@@ -1,6 +1,6 @@
 import heapq
 
-def dijkstra(edges: list, start_id: int, end_id: int, node_map: dict = None) -> list:
+def dijkstra(edges: list, start_id: int, end_id: int) -> list:
     graph = {}
     for from_id, to_id, weight in edges:
         if from_id not in graph:

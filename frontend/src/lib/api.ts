@@ -82,16 +82,8 @@ export const api = {
 
 	// --- throw measuring ---
 	getThrowSessions: () => request<ThrowSession[]>('/throws/sessions'),
-	createThrowSession: (start: { start_latitude: number; start_longitude: number; label?: string }) =>
+	createThrowSession: (start: { start_latitude: number; start_longitude: number }) =>
 		request<ThrowSession>('/throws/sessions', { method: 'POST', body: JSON.stringify(start) }),
-	updateThrowSession: (
-		sessionId: number,
-		update: { start_latitude?: number; start_longitude?: number; label?: string }
-	) =>
-		request<ThrowSession>(`/throws/sessions/${sessionId}`, {
-			method: 'PATCH',
-			body: JSON.stringify(update)
-		}),
 	recordThrow: (
 		sessionId: number,
 		throwIn: {
@@ -158,15 +150,6 @@ export const api = {
 		request<HoleNode>(`/courses/${courseId}/holes/${holeId}/nodes/${nodeId}`, {
 			method: 'PATCH',
 			body: JSON.stringify(node)
-		}),
-	createHoleEdge: (
-		courseId: number,
-		holeId: number,
-		edge: { from_node_id: number; to_node_id: number; distance: number }
-	) =>
-		request<HoleEdge>(`/courses/${courseId}/holes/${holeId}/edges`, {
-			method: 'POST',
-			body: JSON.stringify(edge)
 		}),
 	deleteHoleNode: (courseId: number, holeId: number, nodeId: number) =>
 		request(`/courses/${courseId}/holes/${holeId}/nodes/${nodeId}`, { method: 'DELETE' }),

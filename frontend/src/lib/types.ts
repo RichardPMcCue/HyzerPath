@@ -100,7 +100,6 @@ export interface ThrowMeasurement {
 
 export interface ThrowSession {
 	session_id: number;
-	label: string | null;
 	start_latitude: number;
 	start_longitude: number;
 	created_at: string;

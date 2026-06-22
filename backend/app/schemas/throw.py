@@ -5,13 +5,6 @@ from typing import Optional
 class ThrowSessionCreate(BaseModel):
     start_latitude: float
     start_longitude: float
-    label: Optional[str] = None
-
-class ThrowSessionUpdate(BaseModel):
-    """Re-mark the start point (e.g. moved up the tee pad) or rename."""
-    start_latitude: Optional[float] = None
-    start_longitude: Optional[float] = None
-    label: Optional[str] = None
 
 class ThrowCreate(BaseModel):
     end_latitude: float
@@ -35,7 +28,6 @@ class ThrowSessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     session_id: int
-    label: Optional[str] = None
     start_latitude: float
     start_longitude: float
     created_at: datetime
