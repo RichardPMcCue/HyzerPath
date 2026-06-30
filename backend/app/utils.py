@@ -301,3 +301,45 @@ def path_distance_feet(points: list, tolerance_ft: float = FAIRWAY_FIT_TOLERANCE
         haversine_feet(a[0], a[1], b[0], b[1])
         for a, b in zip(simplified, simplified[1:])
     )
+
+
+def fairway_chain_to_basket(points: list) -> list:
+    """Drop waypoints that sit past the basket so a node placed beyond the pin
+    doesn't inflate the hole's played length. `points` is [(lat, lng), ...] with
+    the tee first and basket last; a point counts only if its projection onto
+    the tee->basket axis lands at or before the basket (t <= 1)."""
+    if len(points) < 3:
+        return points
+    tee, basket = points[0], points[-1]
+    lon_ft = 364000.0 * math.cos(math.radians(tee[0]))
+    def vec(a, b):
+        return ((b[1] - a[1]) * lon_ft, (b[0] - a[0]) * 364000.0)
+    ax, ay = vec(tee, basket)          # tee -> basket axis
+    axis2 = ax * ax + ay * ay
+    if axis2 == 0:
+        return points
+    kept = [tee]
+    for p in points[1:-1]:
+        nx, ny = vec(tee, p)
+        if (nx * ax + ny * ay) / axis2 <= 1.0:  # 0 at tee, 1 at basket
+            kept.append(p)
+    kept.append(basket)
+    return kept
+
+
+def _demo():
+    LAT = 1 / 364000.0
+    tee = (0.0, 0.0)
+    basket = (300 * LAT, 0.0)
+    # An overshoot node 100ft past the basket must not lengthen the hole — the
+    # straight tee->basket distance is ~300ft, not the 500ft out-and-back.
+    overshoot = (400 * LAT, 0.0)
+    assert path_distance_feet(fairway_chain_to_basket([tee, overshoot, basket])) < 320
+    # A real dogleg corner (lateral, before the basket) is kept and adds length.
+    corner = (150 * LAT, 150 * LAT)
+    assert path_distance_feet(fairway_chain_to_basket([tee, corner, basket])) > 380
+    print("ok")
+
+
+if __name__ == "__main__":
+    _demo()

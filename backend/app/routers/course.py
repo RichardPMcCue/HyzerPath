@@ -11,7 +11,7 @@ from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, 
 from app.dependencies import get_current_user, get_current_admin
 from app.graph import dijkstra, compute_edge_weight
 from app.recommendation import SegmentRecommendation, recommend_path, player_reach, flatten_style_distances
-from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence, compute_fairway_polygon, haversine_feet, segment_crosses_polygon, path_distance_feet
+from app.utils import compute_dynamic_centerline, compute_centerline_distance, compute_fairway_width_at_sequence, compute_fairway_polygon, haversine_feet, segment_crosses_polygon, path_distance_feet, fairway_chain_to_basket
 from app.wind import get_wind
 
 CenterlinePoint = namedtuple("CenterlinePoint", ["latitude", "longitude"])
@@ -40,7 +40,8 @@ def recompute_hole_geometry(db: Session, hole: Hole):
         if n.is_fairway and n.latitude is not None and n.longitude is not None
     ]
     if len(chain) >= 2 and chain[0].node_type == "tee" and chain[-1].node_type == "basket":
-        hole.distance = round(path_distance_feet([(n.latitude, n.longitude) for n in chain]))
+        pts = fairway_chain_to_basket([(n.latitude, n.longitude) for n in chain])
+        hole.distance = round(path_distance_feet(pts))
 
 
 def hazard_polygon(h: HoleHazard) -> list:
