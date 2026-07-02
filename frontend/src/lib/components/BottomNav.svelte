@@ -46,7 +46,7 @@
 			{@const active = tab.match(page.url.pathname)}
 			<a
 				href={tab.href}
-				class="flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition-colors
+				class="flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-medium transition-colors
 					{active ? 'text-accent' : 'text-ink-dim'}"
 			>
 				<svg

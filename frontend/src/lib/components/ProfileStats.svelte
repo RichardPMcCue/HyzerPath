@@ -59,7 +59,7 @@
 			</div>
 		{/each}
 	</div>
-	<p class="mt-3 px-1 text-[11px] text-ink-dim">
+	<p class="mt-3 px-1 text-xs text-ink-dim">
 		C1 = inside 33 ft, C2 = inside 66 ft. C1X excludes tap-ins inside 11 ft. "In
 		reg" = reached the circle within par − 2 throws.
 	</p>

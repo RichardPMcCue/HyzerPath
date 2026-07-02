@@ -52,7 +52,7 @@
 	<div class="grid gap-0.5 pb-1" style={gridCols}>
 		<span class="flex items-end justify-center pb-0.5 text-[8px] text-ink-dim">spd</span>
 		{#each stabilities as s (s)}
-			<span class="text-center text-[10px] font-bold text-ink-dim">
+			<span class="text-center text-[11px] font-bold text-ink-dim">
 				{s > 0 ? `+${s}` : s}
 			</span>
 		{/each}
@@ -60,7 +60,7 @@
 
 	{#each visibleSpeeds as speed (speed)}
 		<div class="grid gap-0.5 pb-0.5" style={gridCols}>
-			<span class="flex items-center justify-center text-[10px] font-bold text-ink-dim">
+			<span class="flex items-center justify-center text-[11px] font-bold text-ink-dim">
 				{speed}
 			</span>
 			{#each stabilities as stability (stability)}
@@ -83,7 +83,7 @@
 		</div>
 	{/each}
 
-	<div class="flex justify-between pt-1 pl-[22px] text-[10px] text-ink-dim">
+	<div class="flex justify-between pt-1 pl-[22px] text-[11px] text-ink-dim">
 		<span>← overstable</span>
 		<span>turn + fade</span>
 		<span>understable →</span>

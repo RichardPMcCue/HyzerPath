@@ -88,31 +88,31 @@
 		<div class="mt-3 flex items-center gap-2">
 			<FlightNumbers speed={rec.speed} glide={rec.glide} turn={rec.turn} fade={rec.fade} />
 			{#if hasWear}
-				<span class="rounded-md bg-card-raised px-1.5 py-0.5 text-[11px] font-medium text-ink-dim" title="Wear">
+				<span class="rounded-md bg-card-raised px-1.5 py-0.5 text-xs font-medium text-ink-dim" title="Wear">
 					wear {rec.wear}
 				</span>
 			{/if}
 		</div>
 		{#if rec.rationale}
-			<p class="mt-2 text-[11px] leading-snug text-ink-dim">{rec.rationale}</p>
+			<p class="mt-2 text-xs leading-snug text-ink-dim">{rec.rationale}</p>
 		{/if}
 	{/if}
 
 	{#if showZone || rec.hazards.length > 0 || rec.skipped_node_ids.length > 0}
 		<div class="mt-3 flex flex-wrap gap-1.5">
 			{#if showZone}
-				<span class="rounded-full bg-accent/15 px-2.5 py-0.5 text-[11px] font-semibold text-accent">
+				<span class="rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-semibold text-accent">
 					🎯 {zoneLabel[rec.landing_zone]}
 				</span>
 			{/if}
 			{#each rec.hazards as hazard (hazard)}
-				<span class="rounded-full bg-red-950/80 px-2.5 py-0.5 text-[11px] font-medium text-red-300">
+				<span class="rounded-full bg-red-950/80 px-2.5 py-0.5 text-xs font-medium text-red-300">
 					⚠ {hazard}
 				</span>
 			{/each}
 			{#if rec.skipped_node_ids.length > 0}
-				<span class="rounded-full bg-card-raised px-2.5 py-0.5 text-[11px] font-medium text-ink-dim">
-					skips {rec.skipped_node_ids.length} node{rec.skipped_node_ids.length > 1 ? 's' : ''}
+				<span class="rounded-full bg-card-raised px-2.5 py-0.5 text-xs font-medium text-ink-dim">
+					carries past {rec.skipped_node_ids.length} waypoint{rec.skipped_node_ids.length > 1 ? 's' : ''}
 				</span>
 			{/if}
 		</div>

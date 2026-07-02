@@ -583,7 +583,7 @@
 						{#each h.hazards as hz (hz)}
 							<button
 								type="button"
-								class="rounded-full border border-edge px-2 py-0.5 text-[10px] font-bold uppercase transition active:scale-95"
+								class="rounded-full border border-edge px-2 py-0.5 text-[11px] font-bold uppercase transition active:scale-95"
 								style="color:{HAZARD_COLORS[hz.hazard_type] ?? '#ef4444'}"
 								onclick={() => removeHazard(h, hz)}
 								title="Remove {hz.hazard_type} area"

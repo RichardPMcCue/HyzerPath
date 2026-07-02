@@ -22,7 +22,7 @@
 <div class="flex gap-1.5">
 	{#each numbers as n (n.label)}
 		<span
-			class="flex h-7 w-7 flex-col items-center justify-center rounded-md bg-card-raised text-[11px] font-bold"
+			class="flex h-7 w-7 flex-col items-center justify-center rounded-md bg-card-raised text-xs font-bold"
 			title={n.label}
 		>
 			{n.value ?? '–'}

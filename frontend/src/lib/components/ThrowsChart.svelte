@@ -113,7 +113,7 @@
 						<span class="h-3 w-3 shrink-0 rounded-full" style="background:{row.color}"></span>
 						<div class="min-w-0">
 							<p class="truncate text-sm font-semibold">{row.discName}</p>
-							<p class="text-[11px] text-ink-dim">
+							<p class="text-xs text-ink-dim">
 								{fmtDate(row.t.created_at)}{row.t.throw_style === 'forehand'
 									? ' · FH'
 									: row.t.throw_style === 'backhand'

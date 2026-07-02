@@ -6,6 +6,7 @@
 	let courses = $state<Map<number, Course>>(new Map());
 	let stats = $state<Map<number, RoundStats>>(new Map());
 	let loaded = $state(false);
+	let menuFor = $state<number | null>(null); // round_id whose ⋯ menu is open
 
 	$effect(() => {
 		Promise.all([api.listRounds(), api.getCourses()])
@@ -95,7 +96,15 @@
 			{@const holes = holesFor(round)}
 			{@const rel = relative(round)}
 			{@const rs = stats.get(round.round_id)}
-			<div class="rounded-2xl border border-edge bg-card p-4">
+			<div class="relative rounded-2xl border border-edge bg-card p-4">
+				{#if round.total_score !== null}
+					<!-- Stretched link: the whole finished card opens the summary -->
+					<a
+						href="/rounds/{round.round_id}/summary"
+						class="absolute inset-0 rounded-2xl"
+						aria-label="View round summary"
+					></a>
+				{/if}
 				<div class="flex items-start justify-between">
 					<div>
 						<p class="font-semibold">{course?.name ?? `Course ${round.course_id}`}</p>
@@ -107,7 +116,7 @@
 							})}
 						</p>
 					</div>
-					<div class="flex items-start gap-2">
+					<div class="relative z-10 flex items-center gap-1">
 						{#if round.total_score !== null}
 							<div class="text-right">
 								<p class="text-xl font-bold {rel > 0 ? 'text-amber-300' : 'text-accent'}">
@@ -123,22 +132,45 @@
 								Resume
 							</a>
 						{/if}
-						<button
-							class="p-1 text-ink-dim transition hover:text-red-400"
-							onclick={() => removeRound(round.round_id)}
-							aria-label="Delete round"
-						>
-							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-							</svg>
-						</button>
+						<div class="relative">
+							<button
+								class="flex h-10 w-10 items-center justify-center rounded-lg text-ink-dim transition active:scale-95"
+								aria-label="Round options"
+								aria-expanded={menuFor === round.round_id}
+								onclick={() => (menuFor = menuFor === round.round_id ? null : round.round_id)}
+							>
+								<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+									<path d="M12 6.75a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm0 6.75a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm0 6.75a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z" />
+								</svg>
+							</button>
+							{#if menuFor === round.round_id}
+								<button
+									class="fixed inset-0 z-40 cursor-default"
+									aria-label="Close menu"
+									onclick={() => (menuFor = null)}
+								></button>
+								<div
+									class="absolute top-10 right-0 z-50 w-44 overflow-hidden rounded-xl border border-edge bg-card-raised shadow-lg"
+								>
+									<button
+										class="w-full px-4 py-3 text-left text-sm font-semibold text-red-400 transition active:bg-card"
+										onclick={() => {
+											menuFor = null;
+											removeRound(round.round_id);
+										}}
+									>
+										Delete round
+									</button>
+								</div>
+							{/if}
+						</div>
 					</div>
 				</div>
 				{#if holes.length > 0}
 					<div class="mt-3 flex flex-wrap gap-1">
 						{#each holes as h (h.number)}
 							<span
-								class="flex h-7 w-7 items-center justify-center rounded-md text-[11px] font-bold {scoreColor(h.score, h.par)}"
+								class="flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold {scoreColor(h.score, h.par)}"
 								title="Hole {h.number} · Par {h.par}"
 							>
 								{h.score && h.score > 0 ? h.score : '·'}

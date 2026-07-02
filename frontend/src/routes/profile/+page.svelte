@@ -208,7 +208,7 @@
 				<div class="flex items-center justify-between">
 					<p class="text-xs tracking-wide text-ink-dim uppercase">Signed in</p>
 			{#if auth.isAdmin}
-				<span class="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold tracking-wide text-accent uppercase">
+				<span class="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-bold tracking-wide text-accent uppercase">
 					Admin
 				</span>
 			{/if}

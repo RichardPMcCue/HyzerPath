@@ -111,6 +111,7 @@
 	let finishing = $state(false);
 
 	let currentHoleId = $state<number | null>(null);
+	let menuOpen = $state(false);
 	let mode = $state<CaddieMode>('balanced');
 	let lie = $state<{ latitude: number; longitude: number } | null>(null);
 	let markingLie = $state(false);
@@ -161,6 +162,11 @@
 		return rel;
 	});
 	const strokes = $derived(currentHole ? (scores.get(currentHole.hole_id) ?? 0) : 0);
+	// Every hole scored → surface a proper Finish button instead of making the
+	// player dig into the overflow menu
+	const allScored = $derived(
+		sortedHoles.length > 0 && sortedHoles.every((h) => (scores.get(h.hole_id) ?? 0) > 0)
+	);
 
 	$effect(() => {
 		(async () => {
@@ -326,7 +332,7 @@
 		if (!confirm('Abandon this round? Scores will be deleted.')) return;
 		try {
 			await api.deleteRound(roundId);
-			goto('/profile');
+			goto('/rounds');
 		} catch (e) {
 			error = (e as Error).message;
 		}
@@ -336,7 +342,7 @@
 		finishing = true;
 		try {
 			await api.finishRound(roundId);
-			goto('/profile'); // round history lives here
+			goto(`/rounds/${roundId}/summary`, { replaceState: true });
 		} catch (e) {
 			error = (e as Error).message;
 			finishing = false;
@@ -357,17 +363,51 @@
 			<p class="text-xs tracking-wide text-ink-dim uppercase">Playing</p>
 			<h1 class="text-lg font-bold">{course?.name ?? '…'}</h1>
 		</div>
-		<div class="text-right">
+		<div class="flex items-center gap-2">
 			<p class="text-2xl font-bold {totalRelative > 0 ? 'text-amber-300' : 'text-accent'}">
 				{totalRelative === 0 ? 'E' : totalRelative > 0 ? `+${totalRelative}` : totalRelative}
 			</p>
-			<div class="flex gap-3">
-				<button class="text-xs font-medium text-red-400/80 underline" onclick={abandonRound}>
-					Abandon
+			<div class="relative">
+				<button
+					class="flex h-10 w-10 items-center justify-center rounded-xl border border-edge bg-card text-ink-dim transition active:scale-95"
+					aria-label="Round options"
+					aria-expanded={menuOpen}
+					onclick={() => (menuOpen = !menuOpen)}
+				>
+					<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+						<path d="M12 6.75a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm0 6.75a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm0 6.75a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z" />
+					</svg>
 				</button>
-				<button class="text-xs font-medium text-ink-dim underline" onclick={finishRound} disabled={finishing}>
-					{finishing ? 'Saving…' : 'Finish round'}
-				</button>
+				{#if menuOpen}
+					<button
+						class="fixed inset-0 z-40 cursor-default"
+						aria-label="Close menu"
+						onclick={() => (menuOpen = false)}
+					></button>
+					<div
+						class="absolute top-11 right-0 z-50 w-48 overflow-hidden rounded-xl border border-edge bg-card-raised shadow-lg"
+					>
+						<button
+							class="w-full px-4 py-3 text-left text-sm font-semibold transition active:bg-card disabled:opacity-50"
+							onclick={() => {
+								menuOpen = false;
+								finishRound();
+							}}
+							disabled={finishing}
+						>
+							{finishing ? 'Saving…' : 'Finish round'}
+						</button>
+						<button
+							class="w-full border-t border-edge px-4 py-3 text-left text-sm font-semibold text-red-400 transition active:bg-card"
+							onclick={() => {
+								menuOpen = false;
+								abandonRound();
+							}}
+						>
+							Abandon round
+						</button>
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -386,7 +426,7 @@
 				>
 					{hole.hole_number}
 					{#if label}
-						<span class="text-[10px] font-semibold {label.startsWith('+') ? 'text-amber-300' : 'text-accent'}">{label}</span>
+						<span class="text-[11px] font-semibold {label.startsWith('+') ? 'text-amber-300' : 'text-accent'}">{label}</span>
 					{/if}
 				</button>
 			{/each}
@@ -529,6 +569,17 @@
 				+
 			</button>
 		</div>
+	{/if}
+
+	<!-- All holes scored → offer the real Finish button here, not just in ⋯ -->
+	{#if allScored}
+		<button
+			class="w-full rounded-2xl bg-accent py-4 text-base font-bold text-surface transition active:scale-[0.98] disabled:opacity-50"
+			onclick={finishRound}
+			disabled={finishing}
+		>
+			{finishing ? 'Saving…' : 'Finish round'}
+		</button>
 	{/if}
 </main>
 

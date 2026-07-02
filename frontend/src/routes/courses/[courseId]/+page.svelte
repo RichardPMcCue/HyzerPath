@@ -76,7 +76,7 @@
 					href="/courses/{courseId}/holes/{hole.hole_id}"
 					class="flex flex-col items-center rounded-2xl border border-edge bg-card py-4 transition active:scale-95"
 				>
-					<span class="text-[10px] font-medium tracking-widest text-ink-dim uppercase">Hole</span>
+					<span class="text-[11px] font-medium tracking-widest text-ink-dim uppercase">Hole</span>
 					<span class="text-2xl font-bold text-accent">{hole.hole_number}</span>
 					<span class="mt-1 text-xs text-ink-dim">Par {hole.par}</span>
 					<span class="text-xs text-ink-dim">{hole.distance} ft</span>

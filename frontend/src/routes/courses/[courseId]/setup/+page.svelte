@@ -99,7 +99,7 @@
 					onclick={() => (layout = l.value)}
 				>
 					<p class="text-sm font-semibold {layout === l.value ? 'text-accent' : ''}">{l.label}</p>
-					<p class="mt-0.5 text-[11px] text-ink-dim">{l.detail}</p>
+					<p class="mt-0.5 text-xs text-ink-dim">{l.detail}</p>
 				</button>
 			{/each}
 		</div>
