@@ -44,20 +44,17 @@
 	}
 
 	function throwLineGeoJSON(): FeatureCollection {
-		const nodeById = new Map(nodes.map((n) => [n.hole_node_id, n]));
 		const features: Feature[] = [];
 		for (const rec of recommendations) {
-			const from = nodeById.get(rec.from_node_id);
-			const to = nodeById.get(rec.to_node_id);
-			if (!from?.latitude || !to?.latitude) continue;
+			if (rec.start_latitude == null || rec.target_latitude == null) continue;
 			features.push({
 				type: 'Feature',
 				properties: {},
 				geometry: {
 					type: 'LineString',
 					coordinates: [
-						[from.longitude!, from.latitude!],
-						[to.longitude!, to.latitude!]
+						[rec.start_longitude!, rec.start_latitude],
+						[rec.target_longitude!, rec.target_latitude]
 					]
 				}
 			});
@@ -122,21 +119,47 @@
 		if (source) source.setData(throwLineGeoJSON());
 
 		document.querySelectorAll('.hole-marker').forEach((el) => el.remove());
-		const skipped = new Set(recommendations.flatMap((r) => r.skipped_node_ids));
 		for (const node of gpsNodes) {
 			const el = document.createElement('div');
 			el.className = 'hole-marker';
-			const dim = skipped.has(node.hole_node_id);
-			const isLie = node.hole_node_id === 0; // virtual node at the player's position
-			const big = isLie || node.node_type === 'tee' || node.node_type === 'basket';
-			el.style.cssText = `width:${big ? 16 : 11}px;
-				height:${big ? 16 : 11}px;
-				border-radius:9999px;background:${isLie ? '#38bdf8' : nodeColor(node.node_type)};
-				border:2px solid #0c1210;opacity:${dim ? 0.45 : 1};
-				${isLie ? 'box-shadow:0 0 0 5px rgba(56,189,248,0.3);' : ''}`;
+			el.style.cssText = `width:16px;height:16px;
+				border-radius:9999px;background:${nodeColor(node.node_type)};
+				border:2px solid #0c1210;`;
 			new maplibregl.Marker({ element: el })
 				.setLngLat([node.longitude!, node.latitude!])
 				.addTo(map);
+		}
+		// Landing targets: where each recommended throw should come down
+		for (const rec of recommendations) {
+			if (rec.target_latitude == null || rec.landing_zone === 'basket') continue;
+			const el = document.createElement('div');
+			el.className = 'hole-marker';
+			el.style.cssText = `width:14px;height:14px;border-radius:9999px;
+				background:transparent;border:3px solid #34d399;
+				box-shadow:0 0 0 3px rgba(52,211,153,0.25);`;
+			new maplibregl.Marker({ element: el })
+				.setLngLat([rec.target_longitude!, rec.target_latitude])
+				.addTo(map);
+		}
+		// The player's lie is the first throw's start when planning mid-hole
+		const first = recommendations[0];
+		if (first?.start_latitude != null && first.is_recovery !== undefined) {
+			const isTee = gpsNodes.some(
+				(n) =>
+					n.node_type === 'tee' &&
+					Math.abs((n.latitude ?? 0) - first.start_latitude!) < 1e-7 &&
+					Math.abs((n.longitude ?? 0) - first.start_longitude!) < 1e-7
+			);
+			if (!isTee) {
+				const el = document.createElement('div');
+				el.className = 'hole-marker';
+				el.style.cssText = `width:16px;height:16px;border-radius:9999px;
+					background:#38bdf8;border:2px solid #0c1210;
+					box-shadow:0 0 0 5px rgba(56,189,248,0.3);`;
+				new maplibregl.Marker({ element: el })
+					.setLngLat([first.start_longitude!, first.start_latitude])
+					.addTo(map);
+			}
 		}
 	}
 

@@ -8,7 +8,6 @@ import type {
 	DiscStat,
 	Hazard,
 	Hole,
-	HoleEdge,
 	HoleNode,
 	HolePath,
 	LifetimeStats,
@@ -130,7 +129,13 @@ export const api = {
 	deleteCourse: (courseId: number) => request(`/courses/${courseId}`, { method: 'DELETE' }),
 	createHole: (
 		courseId: number,
-		hole: { hole_number: number; par: number; distance: number; elevation: number }
+		hole: {
+			hole_number: number;
+			par: number;
+			distance: number;
+			elevation: number;
+			fairway_polygon?: [number, number][];
+		}
 	) => request<Hole>(`/courses/${courseId}/holes`, { method: 'POST', body: JSON.stringify(hole) }),
 	updateHole: (courseId: number, holeId: number, hole: Partial<Hole>) =>
 		request<Hole>(`/courses/${courseId}/holes/${holeId}`, {
@@ -153,10 +158,6 @@ export const api = {
 		}),
 	deleteHoleNode: (courseId: number, holeId: number, nodeId: number) =>
 		request(`/courses/${courseId}/holes/${holeId}/nodes/${nodeId}`, { method: 'DELETE' }),
-	rebuildHoleEdges: (courseId: number, holeId: number) =>
-		request<HoleEdge[]>(`/courses/${courseId}/holes/${holeId}/edges/rebuild`, {
-			method: 'POST'
-		}),
 	getHoleHazards: (courseId: number, holeId: number) =>
 		request<Hazard[]>(`/courses/${courseId}/holes/${holeId}/hazards`),
 	createHoleHazard: (

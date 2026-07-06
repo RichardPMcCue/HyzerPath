@@ -4,7 +4,7 @@
 	import type { Feature, FeatureCollection } from 'geojson';
 	import { autoResize, satelliteStyle } from '$lib/map';
 	import type { MapperHazard, MapperHole } from '$lib/types';
-	import { chainDistanceFeet, orderFairwayWaypoints } from '$lib/geo';
+	import { haversineFeet } from '$lib/geo';
 
 	let {
 		holes = $bindable(),
@@ -43,17 +43,6 @@
 			null
 	);
 
-	// Keep the corridor sane: waypoints always follow the best-fit chain from
-	// tee to pin, no matter what order they were tapped or dragged in
-	function applyFairwayOrder(h: MapperHole) {
-		if (!h.tee || h.fairway.length < 2) return;
-		const ordered = orderFairwayWaypoints(h.tee, h.fairway, h.pin);
-		if (ordered.some((wp, i) => wp !== h.fairway[i])) {
-			h.fairway = ordered;
-			if (h.holeId) h.fairwayChanged = true;
-		}
-	}
-
 	// What the next tap will place in layout mode
 	const nextPlacement = $derived.by(() => {
 		const last = holes[holes.length - 1];
@@ -63,16 +52,29 @@
 	});
 
 	function holeChain(h: MapperHole): { lat: number; lng: number }[] {
-		return [h.tee, ...h.fairway, h.pin].filter((p) => p !== null) as {
-			lat: number;
-			lng: number;
-		}[];
+		return [h.tee, h.pin].filter((p) => p !== null) as { lat: number; lng: number }[];
 	}
 
 	function holeDistance(h: MapperHole): number | null {
 		if (!h.tee || !h.pin) return null;
-		// Best-fit line: corridor-width waypoint scatter doesn't add length
-		return Math.round(chainDistanceFeet(holeChain(h)));
+		// Straight-line estimate while placing; the server stores the real
+		// routed length once the fairway polygon is saved
+		return Math.round(haversineFeet(h.tee.lat, h.tee.lng, h.pin.lat, h.pin.lng));
+	}
+
+	function fairwaysGeoJSON(): FeatureCollection {
+		const features: Feature[] = [];
+		for (const h of holes) {
+			if (h.fairway.length < 3) continue;
+			const ring = h.fairway.map((p) => [p.lng, p.lat]);
+			ring.push(ring[0]);
+			features.push({
+				type: 'Feature',
+				properties: {},
+				geometry: { type: 'Polygon', coordinates: [ring] }
+			});
+		}
+		return { type: 'FeatureCollection', features };
 	}
 
 	function linesGeoJSON(): FeatureCollection {
@@ -171,7 +173,6 @@
 					h[kind] = { lat, lng };
 					if (kind === 'tee') h.teeMoved = true;
 					else h.pinMoved = true;
-					applyFairwayOrder(h);
 					holes = [...holes];
 					syncMap();
 				});
@@ -188,8 +189,7 @@
 					const { lng, lat } = marker.getLngLat();
 					wp.lat = lat;
 					wp.lng = lng;
-					wp.moved = true;
-					applyFairwayOrder(h);
+					h.fairwayChanged = true;
 					holes = [...holes];
 					syncMap();
 				});
@@ -204,6 +204,7 @@
 			);
 		}
 		setSource('hole-lines', linesGeoJSON());
+		setSource('fairways', fairwaysGeoJSON());
 		setSource('hazards', hazardsGeoJSON());
 		setSource('hazard-draft', draftGeoJSON());
 	}
@@ -217,12 +218,11 @@
 		}
 		if (mode === 'fairway') {
 			if (!activeHole) {
-				error = 'Place a tee first, then add fairway waypoints';
+				error = 'Place a tee first, then outline its fairway';
 				return;
 			}
 			activeHole.fairway.push({ lat, lng });
-			if (activeHole.holeId) activeHole.fairwayChanged = true;
-			applyFairwayOrder(activeHole);
+			activeHole.fairwayChanged = true;
 			holes = [...holes];
 			syncMap();
 			return;
@@ -231,7 +231,6 @@
 		if (last && last.tee && !last.pin) {
 			last.pin = { lat, lng };
 			last.pinMoved = true;
-			applyFairwayOrder(last);
 		} else {
 			holes.push({
 				holeNumber: nextPlacement.hole,
@@ -306,11 +305,8 @@
 		}
 		if (mode === 'fairway') {
 			if (!activeHole || activeHole.fairway.length === 0) return;
-			const wp = activeHole.fairway.pop()!;
-			if (wp.nodeId) {
-				activeHole.removedNodeIds = [...(activeHole.removedNodeIds ?? []), wp.nodeId];
-			}
-			if (activeHole.holeId) activeHole.fairwayChanged = true;
+			activeHole.fairway.pop();
+			activeHole.fairwayChanged = true;
 			holes = [...holes];
 			syncMap();
 			return;
@@ -371,6 +367,19 @@
 
 		map.on('load', () => {
 			map!.resize();
+			map!.addSource('fairways', { type: 'geojson', data: fairwaysGeoJSON() });
+			map!.addLayer({
+				id: 'fairway-fill',
+				type: 'fill',
+				source: 'fairways',
+				paint: { 'fill-color': '#34d399', 'fill-opacity': 0.14 }
+			});
+			map!.addLayer({
+				id: 'fairway-outline',
+				type: 'line',
+				source: 'fairways',
+				paint: { 'line-color': '#34d399', 'line-opacity': 0.45, 'line-width': 1.5 }
+			});
 			map!.addSource('hazards', { type: 'geojson', data: hazardsGeoJSON() });
 			map!.addLayer({
 				id: 'hazard-fill',
@@ -456,9 +465,10 @@
 			<span class="block pt-0.5 font-normal text-ink-dim">drag any marker to fine-tune</span>
 		{:else if mode === 'fairway'}
 			{#if activeHole}
-				Tap along the fairway of <span class="text-teal-300">hole {activeHole.holeNumber}</span>
+				Outline the fairway of <span class="text-teal-300">hole {activeHole.holeNumber}</span>
 				<span class="block pt-0.5 font-normal text-ink-dim">
-					any order works — the line auto-fits tee → pin · tap a hole below to switch
+					tap the boundary corners in order around the playable area · {activeHole.fairway
+						.length} point{activeHole.fairway.length === 1 ? '' : 's'} · drag any corner to adjust
 				</span>
 			{:else}
 				Place a tee first (Tee · Basket mode)
@@ -555,8 +565,8 @@
 						<span class="font-bold text-accent">#{h.holeNumber}</span>
 						<span class="text-xs text-ink-dim">
 							· {holeDistance(h) !== null ? `${holeDistance(h)} ft` : 'placing…'}
-							{#if h.fairway.length > 0}
-								· {h.fairway.length} wp
+							{#if h.fairway.length >= 3}
+								· fairway ✓
 							{/if}
 						</span>
 					</button>

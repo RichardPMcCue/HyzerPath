@@ -98,8 +98,13 @@
 		{/if}
 	{/if}
 
-	{#if showZone || rec.hazards.length > 0 || rec.skipped_node_ids.length > 0}
+	{#if showZone || rec.hazards.length > 0 || rec.is_recovery}
 		<div class="mt-3 flex flex-wrap gap-1.5">
+			{#if rec.is_recovery}
+				<span class="rounded-full bg-sky-950 px-2.5 py-0.5 text-xs font-semibold text-sky-300">
+					↩ recovery
+				</span>
+			{/if}
 			{#if showZone}
 				<span class="rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-semibold text-accent">
 					🎯 {zoneLabel[rec.landing_zone]}
@@ -110,11 +115,6 @@
 					⚠ {hazard}
 				</span>
 			{/each}
-			{#if rec.skipped_node_ids.length > 0}
-				<span class="rounded-full bg-card-raised px-2.5 py-0.5 text-xs font-medium text-ink-dim">
-					carries past {rec.skipped_node_ids.length} waypoint{rec.skipped_node_ids.length > 1 ? 's' : ''}
-				</span>
-			{/if}
 		</div>
 	{/if}
 </div>

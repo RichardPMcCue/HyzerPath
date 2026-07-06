@@ -127,6 +127,8 @@ export interface Hole {
 	distance: number;
 	elevation: number;
 	is_approved: boolean;
+	/** Open ring of [lat, lng] pairs outlining the playable fairway */
+	fairway_polygon: [number, number][] | null;
 }
 
 export interface Course {
@@ -142,23 +144,14 @@ export interface Course {
 
 export type NodeType = 'tee' | 'landing_zone' | 'mando' | 'dogleg' | 'basket';
 
-/** A fairway waypoint between tee and basket in the mapper. */
-export interface MapperWaypoint {
-	lat: number;
-	lng: number;
-	/** Set when the waypoint exists on the server (edit mode) */
-	nodeId?: number;
-	moved?: boolean;
-}
-
 /** One hole being placed/edited in the course mapper UI. */
 export interface MapperHole {
 	holeNumber: number;
 	par: number;
 	tee: { lat: number; lng: number } | null;
 	pin: { lat: number; lng: number } | null;
-	/** Fairway waypoints (landing zones), in play order — defines doglegs */
-	fairway: MapperWaypoint[];
+	/** Fairway boundary polygon vertices (outline, like hazards) */
+	fairway: { lat: number; lng: number }[];
 	/** Set when the hole already exists on the server (edit mode) */
 	holeId?: number;
 	teeNodeId?: number;
@@ -167,10 +160,8 @@ export interface MapperHole {
 	teeMoved?: boolean;
 	pinMoved?: boolean;
 	parChanged?: boolean;
-	/** Waypoints added/removed — edges need a rebuild on save */
+	/** Fairway polygon added/edited — re-sent on save */
 	fairwayChanged?: boolean;
-	/** Persisted waypoint nodes removed via undo, deleted on save */
-	removedNodeIds?: number[];
 	/** Hazard/OB areas drawn for this hole */
 	hazards: MapperHazard[];
 	/** Persisted hazards removed in the editor, deleted on save */
@@ -195,14 +186,6 @@ export interface HoleNode {
 	longitude: number | null;
 	centerline_distance: number | null;
 	is_fairway: boolean;
-}
-
-export interface HoleEdge {
-	hole_edge_id: number;
-	from_node_id: number;
-	to_node_id: number;
-	distance: number;
-	fairway_width: number | null;
 }
 
 export type ShotShape =
@@ -233,10 +216,14 @@ export interface SegmentRecommendation {
 	turn: number | null;
 	fade: number | null;
 	wear: number | null;
-	from_node_id: number;
-	to_node_id: number;
+	// Where the throw starts and where it should land (derived route targets)
+	start_latitude: number | null;
+	start_longitude: number | null;
+	target_latitude: number | null;
+	target_longitude: number | null;
+	/** Lie was outside the fairway; this throw gets back in */
+	is_recovery: boolean;
 	hazards: string[];
-	skipped_node_ids: number[];
 }
 
 export interface Hazard {
@@ -249,7 +236,6 @@ export interface Hazard {
 
 export interface HolePath {
 	nodes: HoleNode[];
-	edges: HoleEdge[];
 	total_distance: number;
 	node_count: number;
 	recommendations: SegmentRecommendation[];

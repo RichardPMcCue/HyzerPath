@@ -529,7 +529,7 @@
 		<p class="rounded-xl bg-red-950/60 p-4 text-sm text-red-300">{error}</p>
 	{:else if path}
 		<div class="space-y-3 {loading ? 'opacity-60' : ''}">
-			{#each path.recommendations as rec, i (rec.from_node_id + '-' + rec.to_node_id)}
+			{#each path.recommendations as rec, i (i)}
 				<SegmentCard {rec} index={i} />
 			{/each}
 		</div>

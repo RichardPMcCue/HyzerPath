@@ -1,22 +1,23 @@
 import { api } from '$lib/api';
-import { chainDistanceFeet } from '$lib/geo';
+import { haversineFeet } from '$lib/geo';
 import type { MapperHole } from '$lib/types';
 
-function chainDistance(points: { lat: number; lng: number }[]): number {
-	// Best-fit fairway line, matching the server's recompute
-	return Math.round(chainDistanceFeet(points));
+function ring(h: MapperHole): [number, number][] | undefined {
+	return h.fairway.length >= 3 ? h.fairway.map((p) => [p.lat, p.lng]) : undefined;
 }
 
-/** Persist a fully placed mapper hole: hole + tee/waypoint/basket nodes,
- *  edges (chain, rebuilt server-side), and any drawn hazard areas. */
+/** Persist a fully placed mapper hole: hole (with its fairway polygon),
+ *  tee/basket nodes, and any drawn hazard areas. The server derives the
+ *  playing line and the real distance from the polygon. */
 export async function createMappedHole(courseId: number, h: MapperHole): Promise<void> {
 	if (!h.tee || !h.pin) return;
-	const chain = [h.tee, ...h.fairway, h.pin];
 	const hole = await api.createHole(courseId, {
 		hole_number: h.holeNumber,
 		par: h.par,
-		distance: chainDistance(chain),
-		elevation: 0
+		// straight-line estimate; the server recomputes from the routed line
+		distance: Math.round(haversineFeet(h.tee.lat, h.tee.lng, h.pin.lat, h.pin.lng)),
+		elevation: 0,
+		fairway_polygon: ring(h)
 	});
 	await api.createHoleNode(courseId, hole.hole_id, {
 		node_type: 'tee',
@@ -26,25 +27,19 @@ export async function createMappedHole(courseId: number, h: MapperHole): Promise
 		longitude: h.tee.lng,
 		is_fairway: true
 	});
-	for (let i = 0; i < h.fairway.length; i++) {
-		await api.createHoleNode(courseId, hole.hole_id, {
-			node_type: 'landing_zone',
-			sequence: i + 1,
-			label: `LZ ${i + 1}`,
-			latitude: h.fairway[i].lat,
-			longitude: h.fairway[i].lng,
-			is_fairway: true
-		});
-	}
 	await api.createHoleNode(courseId, hole.hole_id, {
 		node_type: 'basket',
-		sequence: h.fairway.length + 1,
+		sequence: 1,
 		label: 'Basket',
 		latitude: h.pin.lat,
 		longitude: h.pin.lng,
 		is_fairway: true
 	});
-	await api.rebuildHoleEdges(courseId, hole.hole_id);
+	// Nodes landed after the polygon: re-send it so the server can route
+	// tee→basket and store the real played distance
+	if (ring(h)) {
+		await api.updateHole(courseId, hole.hole_id, { fairway_polygon: ring(h) });
+	}
 	for (const hz of h.hazards) {
 		await api.createHoleHazard(courseId, hole.hole_id, {
 			hazard_type: hz.hazard_type,
@@ -53,15 +48,10 @@ export async function createMappedHole(courseId: number, h: MapperHole): Promise
 	}
 }
 
-/** Sync an existing hole's structure: waypoint adds/moves/removals, marker
- *  moves, par, and hazard changes. Rebuilds edges when topology changed. */
+/** Sync an existing hole's structure: marker moves, fairway polygon edits,
+ *  par, and hazard changes. */
 export async function saveMappedHoleChanges(courseId: number, h: MapperHole): Promise<void> {
 	if (!h.holeId) return;
-
-	for (const nodeId of h.removedNodeIds ?? []) {
-		await api.deleteHoleNode(courseId, h.holeId, nodeId);
-	}
-	h.removedNodeIds = [];
 
 	if (h.teeMoved && h.tee) {
 		if (h.teeNodeId) {
@@ -90,7 +80,7 @@ export async function saveMappedHoleChanges(courseId: number, h: MapperHole): Pr
 		} else {
 			const node = await api.createHoleNode(courseId, h.holeId, {
 				node_type: 'basket',
-				sequence: h.fairway.length + 1,
+				sequence: 1,
 				label: 'Basket',
 				latitude: h.pin.lat,
 				longitude: h.pin.lng,
@@ -100,43 +90,8 @@ export async function saveMappedHoleChanges(courseId: number, h: MapperHole): Pr
 		}
 	}
 
-	// Waypoints: resequence everything when the set changed, else just moves
-	if (h.fairwayChanged) {
-		for (let i = 0; i < h.fairway.length; i++) {
-			const wp = h.fairway[i];
-			if (wp.nodeId) {
-				await api.updateHoleNode(courseId, h.holeId, wp.nodeId, {
-					sequence: i + 1,
-					latitude: wp.lat,
-					longitude: wp.lng
-				});
-			} else {
-				const node = await api.createHoleNode(courseId, h.holeId, {
-					node_type: 'landing_zone',
-					sequence: i + 1,
-					label: `LZ ${i + 1}`,
-					latitude: wp.lat,
-					longitude: wp.lng,
-					is_fairway: true
-				});
-				wp.nodeId = node.hole_node_id;
-			}
-		}
-		if (h.pinNodeId) {
-			await api.updateHoleNode(courseId, h.holeId, h.pinNodeId, {
-				sequence: h.fairway.length + 1
-			});
-		}
-		await api.rebuildHoleEdges(courseId, h.holeId);
-	} else {
-		for (const wp of h.fairway) {
-			if (wp.moved && wp.nodeId) {
-				await api.updateHoleNode(courseId, h.holeId, wp.nodeId, {
-					latitude: wp.lat,
-					longitude: wp.lng
-				});
-			}
-		}
+	if (h.fairwayChanged && ring(h)) {
+		await api.updateHole(courseId, h.holeId, { fairway_polygon: ring(h) });
 	}
 
 	if (h.parChanged) {
@@ -166,8 +121,6 @@ export function holeIsDirty(h: MapperHole): boolean {
 		!!h.pinMoved ||
 		!!h.parChanged ||
 		!!h.fairwayChanged ||
-		h.fairway.some((wp) => wp.moved) ||
-		(h.removedNodeIds?.length ?? 0) > 0 ||
 		(h.removedHazardIds?.length ?? 0) > 0 ||
 		h.hazards.some((hz) => !hz.hazardId)
 	);
