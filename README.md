@@ -5,10 +5,10 @@
 ![SvelteKit](https://img.shields.io/badge/SvelteKit-2-orange)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-94%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-96%20passing-brightgreen)
 ![Live](https://img.shields.io/badge/live-hp.rmccue.dev-brightgreen)
 
-HyzerPath is an intelligent disc golf caddie. It models each hole as a directed graph of nodes and edges, runs Dijkstra's algorithm to find the optimal path from tee to basket, and recommends specific discs from the player's bag for each throw segment based on their personal measured throw distances. It is live at [hp.rmccue.dev](https://hp.rmccue.dev).
+HyzerPath is an intelligent disc golf caddie. It models each hole as a fairway polygon, derives the optimal playing line from tee to basket with computational geometry, and recommends specific discs from the player's bag for each throw based on their personal measured throw distances. It is live at [hp.rmccue.dev](https://hp.rmccue.dev).
 
 ## Tech stack
 
@@ -32,11 +32,11 @@ HyzerPath is an intelligent disc golf caddie. It models each hole as a directed 
 
 ## How it works
 
-Each hole is stored as a directed graph. Nodes are points on the hole (tee, fairway landing zones, doglegs, basket), each with a GPS coordinate. Edges connect nodes reachable in a single throw and carry a distance plus any hazards along them. A course editor places nodes on a satellite map, and edges are rebuilt as a chain from tee to basket so a route follows the real fairway instead of cutting across out of bounds.
+Each hole is a fairway polygon drawn on a satellite map, plus real physical points: tee, basket, mandos, and hazard areas (OB, water, trees). There is no hand-authored path — the playing line is derived from the shape of the fairway itself.
 
-To plan a hole, the engine runs Dijkstra from the tee node to the basket node. Edge weight is not raw distance, it is an estimate of throws plus penalties: an edge longer than the player's measured reach costs proportionally more than one throw, lateral distance from the fairway centerline adds a penalty scaled by fairway width, and each hazard adds a cost that varies by play mode (conservative, balanced, aggressive). The result is the lowest-cost route the player can actually execute, not just the shortest line.
+To plan a hole, the engine carves hazards out of the playable area, shrinks it by a safety margin set by the play mode (conservative routes down the middle, aggressive hugs the inside of doglegs), then finds the shortest path through what remains with a visibility graph and Dijkstra. If the margin pinches the fairway shut, it backs off until a route exists — that surviving margin is the hole's honest tightness.
 
-Once the path is found, a lookahead pass merges nodes into single throws the player can cover. The engine then scores every disc per segment on distance fit, the shape the corridor demands, and fairway tightness, evaluating both backhand and forehand from the player's per-style distances. Each throw returns a disc, a throw style, a shot shape, and a target set by the play mode — from a safe par putt to a Circle 1 birdie look.
+The engine then walks the line into individual throws — a flight can shape around a bend but never wrap a hard corner — and scores every disc per throw on distance fit, the shape the corridor demands, and measured clearance to the fairway edge, evaluating both backhand and forehand from the player's per-style distances. Each throw returns a disc, a shot shape, a landing target on the map, and a goal set by the play mode — from a safe par putt to a Circle 1 birdie look.
 
 Throw distances come from the player: a field measuring mode records GPS start and end points per throw, tagged backhand or forehand, feeding the per-disc, per-style averages the engine reads. Wind from Open-Meteo is folded into effective distance at round start.
 
@@ -44,10 +44,10 @@ Throw distances come from the player: a field measuring mode records GPS start a
 
 ## Key engineering decisions
 
-- **Directed graph per hole.** Nodes and edges make doglegs, mandatories, and alternate routes first-class instead of special cases, and let a standard shortest-path algorithm do the routing.
-- **Dijkstra with custom edge weights.** Weights combine estimated throw count, deviation from the fairway centerline, and mode-dependent hazard penalties, so the optimal path reflects playability, not pure distance.
-- **Fairway-aware disc selection.** Disc choice weighs corridor tightness against each disc's lateral movement and reach, so a tunnel gets a controllable disc and an open hole the longer one.
-- **Dynamic fairway geometry.** Centerline and corridor width are computed from the placed fairway nodes at request time rather than stored as static points, so geometry stays correct as the node map is edited.
+- **Fairway as a polygon, line as geometry.** Course mappers draw the playable area; the route, hole length, doglegs, and tightness are all derived from the shape. Nothing to keep consistent by hand, and a whole class of chain-mapping bugs is structurally impossible.
+- **Risk mode as erosion.** One geometric parameter — how far the route stays from the fairway edge — replaces a pile of per-mode penalty constants, and degrades honestly on tight holes.
+- **Fairway-aware disc selection.** Disc choice weighs measured corridor clearance against each disc's lateral movement and reach, so a tunnel gets a controllable disc and an open hole the longer one.
+- **Recovery shots.** A lie outside the fairway is detected geometrically and the first recommendation becomes a pitch-out back into play.
 - **Structured JSON logging.** Logs are emitted as JSON to stdout and captured by systemd, with request method, path, status, and latency on every line.
 - **Fixed-window rate limiter without Redis.** The deploy endpoint uses a small in-memory limiter, enough for a single-process server and one less service to run.
 
