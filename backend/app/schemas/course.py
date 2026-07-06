@@ -1,4 +1,5 @@
-from pydantic import BaseModel, ConfigDict
+import json
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
 from enum import Enum
 from app.recommendation import SegmentRecommendation
@@ -15,6 +16,8 @@ class HoleCreate(BaseModel):
     par: int
     distance: int
     elevation: int
+    # Open ring of [lat, lng] pairs outlining the playable fairway
+    fairway_polygon: Optional[list[tuple[float, float]]] = None
 
 class HoleNodeCreate(BaseModel):
     node_type: NodeType
@@ -34,15 +37,9 @@ class HoleNodeUpdate(BaseModel):
     centerline_distance: Optional[float] = None
     is_fairway: Optional[bool] = None
 
-class HoleEdgeCreate(BaseModel):
-    from_node_id: int
-    to_node_id: int
-    distance: int
-    fairway_width: Optional[int] = None
-
 class HoleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    
+
     hole_id: int
     course_id: int
     hole_number: int
@@ -50,6 +47,13 @@ class HoleResponse(BaseModel):
     distance: int
     elevation: int
     is_approved: bool
+    fairway_polygon: Optional[list[tuple[float, float]]] = None
+
+    @field_validator("fairway_polygon", mode="before")
+    @classmethod
+    def _parse_ring(cls, v):
+        # The model stores the ring as JSON text (like HoleHazard.polygon)
+        return json.loads(v) if isinstance(v, str) else v
 
 class HoleUpdate(BaseModel):
     hole_number: Optional[int] = None
@@ -57,6 +61,7 @@ class HoleUpdate(BaseModel):
     distance: Optional[int] = None
     elevation: Optional[int] = None
     is_approved: Optional[bool] = None # needs admin protection
+    fairway_polygon: Optional[list[tuple[float, float]]] = None
 
 class HoleNodeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -71,15 +76,6 @@ class HoleNodeResponse(BaseModel):
     centerline_distance: Optional[float] = None
     is_fairway: bool = True
 
-class HoleEdgeResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    hole_edge_id: int
-    from_node_id: int
-    to_node_id: int
-    distance: int
-    fairway_width: Optional[int] = None
-
 class HazardCreate(BaseModel):
     hazard_type: str  # 'ob', 'water', 'trees', ...
     # Ring of [lat, lon] pairs (open — no need to repeat the first point)
@@ -93,7 +89,6 @@ class HazardResponse(BaseModel):
 
 class HolePathResponse(BaseModel):
     nodes: list[HoleNodeResponse]
-    edges: list[HoleEdgeResponse]
     total_distance: float
     node_count: int
     recommendations: list[SegmentRecommendation] = []

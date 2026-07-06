@@ -1,3 +1,4 @@
+import json
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -5,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import Bag, Course, Disc, Hole, HoleNode, HoleEdge, Round, RoundHole, RoundThrow, User
+from app.models import Bag, Course, Disc, Hole, HoleNode, Round, RoundHole, RoundThrow, User
 from app.schemas import (
     RoundCreate, RoundUpdate, RoundHoleResponse, RoundHoleScore, RoundResponse,
     RoundThrowCreate, RoundThrowResponse, RoundStatsResponse, LifetimeStatsResponse,
@@ -13,7 +14,7 @@ from app.schemas import (
 
 VALID_TRACKING_MODES = ("discs", "lies", "detail", "score")
 VALID_LAYOUTS = ("full", "front9", "back9")
-from app.utils import haversine_feet, compute_fairway_polygon, point_in_polygon
+from app.utils import haversine_feet, point_in_polygon
 
 C1_FT = 33.0   # circle 1: 10 meters
 C2_FT = 66.0   # circle 2: 20 meters
@@ -244,11 +245,9 @@ def _compute_round_counts(round_id: int, db: Session) -> dict:
         c["holes"] += 1
         nodes = db.query(HoleNode).filter(HoleNode.hole_id == hole_id).all()
         basket = next((n for n in nodes if n.node_type == "basket" and n.latitude is not None), None)
-        edges = db.query(HoleEdge).filter(
-            HoleEdge.from_node_id.in_([n.hole_node_id for n in nodes])
-        ).all()
-        fairway_ring = compute_fairway_polygon([n for n in nodes if n.is_fairway], edges)
         hole = db.query(Hole).filter(Hole.hole_id == hole_id).first()
+        # Fairway-hit detection uses the hole's stored fairway polygon
+        fairway_ring = json.loads(hole.fairway_polygon) if hole and hole.fairway_polygon else []
         # Throws allowed to reach the green and still make par with two putts
         reg = max(1, (hole.par - 2)) if hole and hole.par else 1
 

@@ -2,11 +2,10 @@ import math
 from pydantic import BaseModel
 from typing import Optional
 
+from app.fairway import FairwayRegion, clearance_to_tightness
 from app.utils import (
-    haversine_feet,
     bearing_between,
     angle_diff,
-    point_to_segment_distance,
     segment_crosses_polygon,
 )
 
@@ -32,13 +31,6 @@ C1_FT = 33.0   # Circle 1: ~10 m, a makeable par/birdie putt
 C2_FT = 66.0   # Circle 2: ~20 m
 C3_FT = 100.0  # Circle 3: a long look
 
-# Fairway tightness from corridor width: at/under TIGHT a tunnel (1.0),
-# at/over OPEN there's room to work the disc (0.0), linear in between.
-TIGHT_WIDTH_FT = 25.0
-OPEN_WIDTH_FT = 70.0
-# A "trees" hazard polygon this close to the throw line tightens the corridor.
-TREE_PROXIMITY_FT = 30.0
-
 # score_disc tightness penalty: how much lateral movement and forced max-effort
 # cost on a fully-tight fairway (scaled by tightness and mode).
 W_LAT = 0.5      # per unit of |turn| + fade, on a fully-tight fairway
@@ -54,14 +46,11 @@ MODE_TIGHTNESS_SCALE = {
     "aggressive": 0.4,
 }
 
-# How far a skip-ahead throw line may stray from the mapped fairway waypoints
-# before the jump is disallowed. Send-it mode may cut any corner; safe mode
-# basically has to follow the corridor.
-CORRIDOR_DEVIATION_FT = {
-    "conservative": 70.0,
-    "balanced": 110.0,
-    "aggressive": float("inf"),
-}
+# A disc flight can shape around a corridor bend, but not wrap a hard corner
+# mid-flight: a route vertex turning more than this caps the throw there (the
+# classic "place it at the corner, then attack" plan).
+MAX_BEND_PER_THROW_DEG = 50.0
+MIN_THROW_FT = 40.0  # never plan a shorter hop than this
 
 # A spike hyzer is a short, steep touch shot — never a long drive. Above this
 # distance a big finishing bend is a regular (sweeping) hyzer, not a spike.
@@ -104,10 +93,13 @@ class SegmentRecommendation(BaseModel):
     turn: Optional[float] = None
     fade: Optional[float] = None
     wear: Optional[float] = None
-    from_node_id: int
-    to_node_id: int
-    hazards: list[str]
-    skipped_node_ids: list[int] = []
+    # Where the throw starts and where it should land (derived route targets)
+    start_latitude: Optional[float] = None
+    start_longitude: Optional[float] = None
+    target_latitude: Optional[float] = None
+    target_longitude: Optional[float] = None
+    is_recovery: bool = False  # lie was outside the fairway; this throw gets back in
+    hazards: list[str] = []
 
 
 def style_finishes_left(hand: str, style: str) -> bool:
@@ -206,30 +198,6 @@ def throw_effort(required: float, avg: float, max_distance: float) -> float:
     return (required - avg) / (max_distance - avg)
 
 
-def fairway_tightness(width, throw_line, tree_polygons) -> float:
-    """Corridor tightness in [0, 1] from the fairway width and nearby mapped
-    trees. throw_line is (lat1, lon1, lat2, lon2) or None; tree_polygons is a
-    list of [[lat, lng], ...] rings."""
-    width_term = 0.0
-    if width:
-        width_term = (OPEN_WIDTH_FT - width) / (OPEN_WIDTH_FT - TIGHT_WIDTH_FT)
-        width_term = max(0.0, min(1.0, width_term))
-
-    tree_term = 0.0
-    if throw_line is not None and tree_polygons:
-        lat1, lon1, lat2, lon2 = throw_line
-        nearest = None
-        for polygon in tree_polygons:
-            for point in polygon:
-                d = point_to_segment_distance(point[0], point[1], lat1, lon1, lat2, lon2)
-                if nearest is None or d < nearest:
-                    nearest = d
-        if nearest is not None and nearest < TREE_PROXIMITY_FT:
-            tree_term = 1.0 - nearest / TREE_PROXIMITY_FT
-
-    return max(width_term, tree_term)
-
-
 def landing_zone_for(distance: float, throw_type: str, is_final: bool, mode: str) -> str:
     """Intended landing zone for a throw. Earlier throws place on the fairway;
     the final throw's target circle is set by the risk mode (safe leaves a putt,
@@ -300,55 +268,6 @@ def score_disc(disc, base_distance: float, required_distance: float, desired_sta
     return distance_score + flight_score + control_score + effort_score + lateral_score
 
 
-def _node_has_gps(node) -> bool:
-    return node is not None and node.latitude is not None and node.longitude is not None
-
-
-def _segment_distance(path_nodes: list, i: int, j: int, edge_lookup: dict) -> Optional[float]:
-    """Distance from path node i to path node j: direct edge if one exists,
-    straight-line GPS if both have coords, else cumulative edge distance."""
-    direct = edge_lookup.get((path_nodes[i].hole_node_id, path_nodes[j].hole_node_id))
-    if direct is not None:
-        return float(direct.distance)
-    a, b = path_nodes[i], path_nodes[j]
-    if _node_has_gps(a) and _node_has_gps(b):
-        return haversine_feet(a.latitude, a.longitude, b.latitude, b.longitude)
-    total = 0.0
-    for k in range(i, j):
-        edge = edge_lookup.get((path_nodes[k].hole_node_id, path_nodes[k + 1].hole_node_id))
-        if edge is None:
-            return None
-        total += edge.distance
-    return total
-
-
-def _segment_width(path_nodes: list, i: int, j: int, fairway_widths: dict) -> Optional[float]:
-    """Corridor width for a (possibly skip-ahead) throw i→j. The tightest of the
-    underlying edges governs, since the throw has to fit through all of them."""
-    widths = []
-    direct = fairway_widths.get((path_nodes[i].hole_node_id, path_nodes[j].hole_node_id))
-    if direct:
-        widths.append(direct)
-    for k in range(i, j):
-        w = fairway_widths.get((path_nodes[k].hole_node_id, path_nodes[k + 1].hole_node_id))
-        if w:
-            widths.append(w)
-    return min(widths) if widths else None
-
-
-def _hazards_between(path_nodes: list, i: int, j: int, edge_lookup: dict) -> list[str]:
-    """Union of hazards on the underlying edges between path indices i and j."""
-    direct = edge_lookup.get((path_nodes[i].hole_node_id, path_nodes[j].hole_node_id))
-    if direct is not None and j == i + 1:
-        return [h.hazard_type for h in direct.edge_hazards]
-    hazards = []
-    for k in range(i, j):
-        edge = edge_lookup.get((path_nodes[k].hole_node_id, path_nodes[k + 1].hole_node_id))
-        if edge is not None:
-            hazards.extend(h.hazard_type for h in edge.edge_hazards)
-    return list(dict.fromkeys(hazards))
-
-
 def player_reach(discs: list, disc_distances: dict, disc_max_distances: dict, mode: str) -> float:
     """The longest single throw the engine will plan around, per mode."""
     if not discs:
@@ -371,125 +290,97 @@ def flatten_style_distances(style_distances: dict) -> dict:
     return flat
 
 
-def _jump_corridor_deviation(path_nodes: list, i: int, j: int) -> Optional[float]:
-    """How far the straight line i→j strays from the skipped fairway waypoints
-    (max point-to-line distance, feet). None if GPS is missing."""
-    a, b = path_nodes[i], path_nodes[j]
-    if not _node_has_gps(a) or not _node_has_gps(b):
-        return None
-    deviation = 0.0
-    for k in range(i + 1, j):
-        n = path_nodes[k]
-        if _node_has_gps(n):
-            deviation = max(deviation, point_to_segment_distance(
-                n.latitude, n.longitude,
-                a.latitude, a.longitude,
-                b.latitude, b.longitude,
-            ))
-    return deviation
-
-
-def _jump_crosses_hazard(path_nodes: list, i: int, j: int, hazard_polygons: list) -> list[str]:
-    """Hazard types whose polygon the straight throw line i→j enters."""
-    a, b = path_nodes[i], path_nodes[j]
-    if not _node_has_gps(a) or not _node_has_gps(b) or not hazard_polygons:
-        return []
-    return [
-        hazard_type for hazard_type, polygon in hazard_polygons
-        if segment_crosses_polygon(a.latitude, a.longitude, b.latitude, b.longitude, polygon)
-    ]
-
-
-def plan_segments(
-    path_nodes: list,
-    edge_lookup: dict,
+def plan_route_targets(
+    region: FairwayRegion,
+    route: list,  # [(lat, lng), ...] derived playing line, start first
     reach_limit: float,
     mode: str,
     wind_speed: float = 0.0,
     wind_from_deg: Optional[float] = None,
-    hazard_polygons: Optional[list] = None,  # [(hazard_type, [[lat, lng], ...])]
-) -> list[tuple[int, int]]:
-    """Lookahead/pruning: walk the Dijkstra path and greedily jump to the furthest
-    node reachable in one throw (wind-adjusted). Returns (from_index, to_index) pairs.
+) -> list[tuple[float, float]]:
+    """Walk the derived route and split it into throws: each span reaches as
+    far along the route as one controlled throw allows (wind-adjusted), but
+    never wraps a sharp corner mid-flight — those throws land AT the corner.
+    Returns (d0, d1) distance spans along the route."""
+    dists = region.cumulative_ft(route)
+    total = dists[-1]
 
-    conservative: follows the corridor (≤35 ft cut), never crosses hazards
-    balanced: small corner cuts (≤80 ft), never crosses hazards, 95% of reach
-    aggressive: cuts anything within reach, hazards be damned"""
-    hazard_polygons = hazard_polygons or []
-    segments = []
+    # Sharp corners a single flight can't wrap. Turn is accumulated over a
+    # short window so a corner beveled into several small bends (buffered /
+    # simplified polygons) still registers as one corner.
+    turns = []
+    for i in range(1, len(route) - 1):
+        b_in = bearing_between(*route[i - 1], *route[i])
+        b_out = bearing_between(*route[i], *route[i + 1])
+        turns.append((dists[i], angle_diff(b_out, b_in)))
+    corners = []
     i = 0
-    last = len(path_nodes) - 1
-    while i < last:
-        best_j = i + 1
-        for j in range(last, i + 1, -1):
-            if j == i + 1:
+    while i < len(turns):
+        d_i, acc = turns[i]
+        j = i + 1
+        while j < len(turns) and turns[j][0] - d_i <= 80.0:
+            acc += turns[j][1]
+            j += 1
+        if abs(acc) > MAX_BEND_PER_THROW_DEG:
+            # cap at the window's sharpest vertex
+            sharpest = max(turns[i:j], key=lambda t: abs(t[1]))
+            corners.append(sharpest[0])
+            i = j
+        else:
+            i += 1
+
+    spans = []
+    d = 0.0
+    while d < total - 1.0:
+        remaining = total - d
+        # Wind is evaluated toward where this throw is headed
+        here = region.point_along_route(route, d)
+        probe = region.point_along_route(route, min(d + min(reach_limit, remaining), total))
+        headwind, _ = wind_components(wind_speed, wind_from_deg, bearing_between(*here, *probe))
+        limit = effective_throw_distance(reach_limit, headwind)
+        if mode == "balanced":
+            limit *= 0.95
+        limit = max(limit, MIN_THROW_FT)
+
+        target_d = min(d + limit, total)
+        for corner_d in corners:
+            if d + MIN_THROW_FT < corner_d < target_d - 1.0:
+                target_d = corner_d
                 break
-            dist = _segment_distance(path_nodes, i, j, edge_lookup)
-            if dist is None:
-                continue
-            # Wind-adjust the player's reach for this jump's bearing
-            limit = reach_limit
-            if _node_has_gps(path_nodes[i]) and _node_has_gps(path_nodes[j]):
-                jump_bearing = bearing_between(
-                    path_nodes[i].latitude, path_nodes[i].longitude,
-                    path_nodes[j].latitude, path_nodes[j].longitude,
-                )
-                headwind, _ = wind_components(wind_speed, wind_from_deg, jump_bearing)
-                limit = effective_throw_distance(reach_limit, headwind)
-            if mode == "balanced":
-                limit *= 0.95
-            if dist > limit:
-                continue
-            # The jump is a straight throw: it must respect the mapped fairway
-            # (per-mode corner-cut tolerance) and not fly through drawn hazards
-            deviation = _jump_corridor_deviation(path_nodes, i, j)
-            if deviation is not None and deviation > CORRIDOR_DEVIATION_FT.get(mode, 80.0):
-                continue
-            if mode != "aggressive" and _jump_crosses_hazard(path_nodes, i, j, hazard_polygons):
-                continue
-            if mode == "conservative" and _hazards_between(path_nodes, i, j, edge_lookup):
-                continue
-            best_j = j
-            break
-        segments.append((i, best_j))
-        i = best_j
-    return segments
+        spans.append((d, target_d))
+        d = target_d
+    return spans
 
 
-def recommend_path(
-    path_nodes: list,
-    edge_lookup: dict,  # {(from_node_id, to_node_id): HoleEdge}
+def recommend_route(
+    region: FairwayRegion,
+    route: list,  # derived playing line from the start (tee or lie) to the basket
     discs: list,
     disc_distances: dict,  # {disc_id: avg_distance} — best across styles
-    disc_max_distances: Optional[dict] = None,  # {disc_id: max_distance}
+    disc_max_distances: Optional[dict] = None,
     wind_speed: float = 0.0,
     wind_direction=None,  # compass string or degrees, wind FROM
     mode: str = "balanced",
-    style_distances: Optional[dict] = None,  # {style: {disc_id: avg_distance}}
-    style_max_distances: Optional[dict] = None,  # {style: {disc_id: max_distance}}
+    style_distances: Optional[dict] = None,  # {style: {disc_id: avg}}
+    style_max_distances: Optional[dict] = None,  # {style: {disc_id: max}}
     hand: str = "right",
-    style_priority: Optional[dict] = None,  # {style: 1-based priority, 1 = primary}
-    hazard_polygons: Optional[list] = None,  # [(hazard_type, [[lat, lng], ...])]
-    fairway_widths: Optional[dict] = None,  # {(from_node_id, to_node_id): width_ft}
-    allowed_styles: Optional[list] = None,  # restrict to these styles (user profile)
-    style_hands: Optional[dict] = None,  # {style: 'right'|'left'} for ambidextrous players
+    style_priority: Optional[dict] = None,  # {style: 1-based priority}
+    hazard_polygons: Optional[list] = None,  # [(hazard_type, ring)]
+    allowed_styles: Optional[list] = None,
+    style_hands: Optional[dict] = None,
+    start_is_lie: bool = False,  # live round: flags a recovery when outside
 ) -> list[SegmentRecommendation]:
-    if len(path_nodes) < 2 or not discs:
+    if len(route) < 2 or not discs:
         return []
 
     disc_max_distances = disc_max_distances or {}
-    fairway_widths = fairway_widths or {}
+    hazard_polygons = hazard_polygons or []
     style_hands = style_hands or {}
-    # Mapped tree areas tighten the corridor where they crowd the throw line
-    tree_polygons = [poly for htype, poly in (hazard_polygons or []) if htype == "trees"]
-    # Without per-style data, everything counts as backhand (legacy behavior)
     if not style_distances:
         style_distances = {"backhand": disc_distances}
     if not style_max_distances:
         style_max_distances = {"backhand": disc_max_distances}
-    # No throw-style profile → assume backhand-primary: ties go to the backhand
     style_priority = style_priority or {"backhand": 1, "forehand": 2}
-    # Only consider styles the player has distance data for AND has enabled
     styles = [
         s for s, d in style_distances.items()
         if any(v for v in d.values()) and (not allowed_styles or s in allowed_styles)
@@ -500,55 +391,37 @@ def recommend_path(
 
     wind_from_deg = wind_direction_to_degrees(wind_direction)
     reach_limit = player_reach(discs, disc_distances, disc_max_distances, mode)
+    if reach_limit <= 0:
+        return []
 
-    segments = plan_segments(
-        path_nodes, edge_lookup, reach_limit, mode, wind_speed, wind_from_deg, hazard_polygons
-    )
+    spans = plan_route_targets(region, route, reach_limit, mode, wind_speed, wind_from_deg)
     recommendations = []
 
-    for seg_idx, (i, j) in enumerate(segments):
-        from_node, to_node = path_nodes[i], path_nodes[j]
-        distance = _segment_distance(path_nodes, i, j, edge_lookup) or 0.0
+    for idx, (d0, d1) in enumerate(spans):
+        start_pt = region.point_along_route(route, d0)
+        target_pt = region.point_along_route(route, d1)
+        distance = d1 - d0  # along the corridor: what the flight must cover
+        is_final = idx == len(spans) - 1
 
-        # Throw bearing for wind and shape math
-        throw_bearing = None
-        if _node_has_gps(from_node) and _node_has_gps(to_node):
-            throw_bearing = bearing_between(
-                from_node.latitude, from_node.longitude,
-                to_node.latitude, to_node.longitude,
-            )
-
-        # Finish angle: how the corridor bends at the landing node. The throw
-        # should finish pointing down the next segment.
-        finish_deg = 0.0
-        if seg_idx + 1 < len(segments):
-            _, next_j = segments[seg_idx + 1]
-            next_node = path_nodes[next_j]
-            if throw_bearing is not None and _node_has_gps(next_node):
-                next_bearing = bearing_between(
-                    to_node.latitude, to_node.longitude,
-                    next_node.latitude, next_node.longitude,
-                )
-                finish_deg = angle_diff(next_bearing, throw_bearing)
-
-        # Wind: headwind shortens the throw, crosswind shifts the finish
+        throw_bearing = bearing_between(*start_pt, *target_pt)
         headwind, crosswind = wind_components(wind_speed, wind_from_deg, throw_bearing)
+
+        # Finish angle: where the NEXT throw goes relative to this one
+        finish_deg = 0.0
+        if not is_final:
+            next_pt = region.point_along_route(route, spans[idx + 1][1])
+            finish_deg = angle_diff(bearing_between(*target_pt, *next_pt), throw_bearing)
         finish_deg_adjusted = finish_deg + CROSSWIND_DRIFT_DEG_PER_MPH * crosswind
 
-        is_final = seg_idx == len(segments) - 1
         throw_type = classify_throw(distance, is_final=is_final, reach=reach_limit)
+        # Tightness reads the corridor the flight actually crosses — pad off
+        # the span ends so the fairway's end caps (right behind the tee, right
+        # past the basket) don't make every hole read as a tunnel.
+        pad = min(40.0, (d1 - d0) * 0.25)
+        tightness = clearance_to_tightness(region.min_clearance_along(route, d0 + pad, d1 - pad))
+        is_recovery = idx == 0 and start_is_lie and not region.contains(*route[0])
 
-        # Tunnel vs. open: from the corridor width (tightest underlying edge) and
-        # any mapped trees crowding the throw line.
-        throw_line = None
-        if _node_has_gps(from_node) and _node_has_gps(to_node):
-            throw_line = (from_node.latitude, from_node.longitude, to_node.latitude, to_node.longitude)
-        width = _segment_width(path_nodes, i, j, fairway_widths)
-        tightness = fairway_tightness(width, throw_line, tree_polygons)
-
-        # Evaluate every (style, disc) pair: forehand mirrors the shape math, so
-        # a dogleg that needs a flex backhand is a simple hyzer forehand. Use the
-        # player's measured distances for that style.
+        # Evaluate every (style, disc) pair — unchanged scoring core
         best = None  # (score, disc, style, normalized, effort)
         for style in styles:
             distances = style_distances.get(style, {})
@@ -556,9 +429,6 @@ def recommend_path(
                 continue
             max_dists = style_max_distances.get(style, {}) or {}
 
-            # Normalize the finish angle to this style's fade direction:
-            # negative = "hyzer side" regardless of hand/style. Ambidextrous
-            # players can have a different hand per style.
             throw_hand = style_hands.get(style, hand)
             normalized = finish_deg_adjusted if style_finishes_left(throw_hand, style) else -finish_deg_adjusted
             desired_stability = max(-3.0, min(4.0, -normalized / 15.0))
@@ -568,12 +438,10 @@ def recommend_path(
                 return effective_throw_distance(base, headwind)
 
             def max_carry(d, _max=max_dists, _distances=distances):
-                # The top of the disc's range; fall back to avg if no max recorded
                 base = _max.get(d.disc_id) or _distances.get(d.disc_id, 0) or 0
                 return effective_throw_distance(base, headwind)
 
             def effort_for(d, _distances=distances, _max=max_dists):
-                # Effort measured against the wind-adjusted controlled and max lines
                 avg = effective_throw_distance(_distances.get(d.disc_id, 0) or 0, headwind)
                 dmax = effective_throw_distance(_max.get(d.disc_id, 0) or 0, headwind)
                 return throw_effort(distance, avg, dmax)
@@ -581,14 +449,10 @@ def recommend_path(
             with_data = [d for d in discs if distances.get(d.disc_id)]
             if not with_data:
                 continue
-            # A disc is in play if the target falls within its range (up to its
-            # max line), so every driver that can reach competes — not just the
-            # one whose average is longest.
             capable = [d for d in with_data if max_carry(d) >= distance - REACH_TOLERANCE_FT]
             if not capable:
                 capable = [max(with_data, key=max_carry)]
 
-            # Primary style wins ties; big shapes for the off-hand cost more
             priority_penalty = 0.15 * (style_priority.get(style, 1) - 1)
             for d in capable:
                 effort = effort_for(d)
@@ -603,10 +467,11 @@ def recommend_path(
             continue
         _, best_disc, best_style, best_normalized, best_effort = best
 
-        # Shape depends on the chosen disc: flex vs. turnover, hyzer flip vs. flat
         shot_shape = derive_shot_shape(best_normalized, best_disc, best_effort, distance)
         landing_zone = landing_zone_for(distance, throw_type, is_final, mode)
         rationale = build_rationale(best_disc, shot_shape, tightness, distance, best_effort)
+        if is_recovery:
+            rationale = "Recovery — get back in the fairway. " + rationale
 
         recommendations.append(SegmentRecommendation(
             disc=f"{best_disc.manufacturer} {best_disc.name}",
@@ -623,15 +488,16 @@ def recommend_path(
             turn=getattr(best_disc, "turn", None),
             fade=getattr(best_disc, "fade", None),
             wear=getattr(best_disc, "wear", None),
-            from_node_id=from_node.hole_node_id,
-            to_node_id=to_node.hole_node_id,
-            # Edge-tagged hazards plus any polygons the actual throw line enters
-            # (a send-it corner cut earns its ⚠ even when the path edges are clean)
-            hazards=list(dict.fromkeys(
-                _hazards_between(path_nodes, i, j, edge_lookup)
-                + _jump_crosses_hazard(path_nodes, i, j, hazard_polygons or [])
-            )),
-            skipped_node_ids=[path_nodes[k].hole_node_id for k in range(i + 1, j)],
+            start_latitude=start_pt[0],
+            start_longitude=start_pt[1],
+            target_latitude=target_pt[0],
+            target_longitude=target_pt[1],
+            is_recovery=is_recovery,
+            # The straight chord is the flight's ground line: tag hazards it crosses
+            hazards=[
+                htype for htype, poly in hazard_polygons
+                if segment_crosses_polygon(start_pt[0], start_pt[1], target_pt[0], target_pt[1], poly)
+            ],
         ))
 
     return recommendations

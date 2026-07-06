@@ -1,27 +1,24 @@
+import math
 from types import SimpleNamespace
 
-from app.recommendation import recommend_path, style_finishes_left
+from app.fairway import FairwayRegion
+from app.recommendation import recommend_route, style_finishes_left
+
+LAT0, LNG0 = 40.0, -90.0
+LNG_FT = 364000.0 * math.cos(math.radians(LAT0))
 
 
-def test_style_finishes_left():
-    assert style_finishes_left("right", "backhand") is True
-    assert style_finishes_left("right", "forehand") is False
-    assert style_finishes_left("left", "backhand") is False
-    assert style_finishes_left("left", "forehand") is True
+def ll(x_ft, y_ft):
+    return (LAT0 + y_ft / 364000.0, LNG0 + x_ft / LNG_FT)
 
 
-def _node(node_id, lat, lng):
-    return SimpleNamespace(
-        hole_node_id=node_id, latitude=lat, longitude=lng,
-        node_type="landing_zone", sequence=node_id, is_fairway=True,
-    )
-
-
-def _edge(a, b, dist):
-    return SimpleNamespace(
-        hole_edge_id=0, from_node_id=a, to_node_id=b,
-        distance=dist, fairway_width=None, edge_hazards=[],
-    )
+def right_dogleg():
+    """250ft north then 250ft east, in a 60ft-wide L-shaped fairway. The
+    derived route turns hard right at the corner."""
+    ring = [ll(-30, 0), ll(30, 0), ll(30, 220), ll(280, 220), ll(280, 280), ll(-30, 280)]
+    region = FairwayRegion(ring)
+    route = region.route(ll(0, 5), ll(250, 250), erosion_ft=15)
+    return region, route
 
 
 def _disc(disc_id, name, speed, turn, fade):
@@ -31,24 +28,22 @@ def _disc(disc_id, name, speed, turn, fade):
     )
 
 
+def test_style_finishes_left():
+    assert style_finishes_left("right", "backhand") is True
+    assert style_finishes_left("right", "forehand") is False
+    assert style_finishes_left("left", "backhand") is False
+    assert style_finishes_left("left", "forehand") is True
+
+
 def test_forehand_chosen_for_right_dogleg():
     """Hole bends hard RIGHT. For a righty, the forehand fade finishes right —
     with equal distances both styles available, the FH should win the corner."""
-    # tee → corner (north 250ft) → basket (east 250ft): finish bends right ~90°
-    nodes = [
-        _node(1, 40.0, -90.0),
-        _node(2, 40.000687, -90.0),       # 250 ft north
-        _node(3, 40.000687, -89.999103),  # 250 ft east
-    ]
-    edges = {
-        (1, 2): _edge(1, 2, 250),
-        (2, 3): _edge(2, 3, 250),
-    }
+    region, route = right_dogleg()
     disc = _disc(1, "Stable", 9.0, 0.0, 2.0)  # fades toward its style's side
 
-    recs = recommend_path(
-        path_nodes=nodes,
-        edge_lookup=edges,
+    recs = recommend_route(
+        region=region,
+        route=route,
         discs=[disc],
         disc_distances={1: 260},
         style_distances={"backhand": {1: 260}, "forehand": {1: 260}},
@@ -62,17 +57,12 @@ def test_forehand_chosen_for_right_dogleg():
 
 
 def test_backhand_only_player_never_gets_forehand(client=None):
-    nodes = [
-        _node(1, 40.0, -90.0),
-        _node(2, 40.000687, -90.0),
-        _node(3, 40.000687, -89.999103),
-    ]
-    edges = {(1, 2): _edge(1, 2, 250), (2, 3): _edge(2, 3, 250)}
+    region, route = right_dogleg()
     disc = _disc(1, "Stable", 9.0, 0.0, 2.0)
 
-    recs = recommend_path(
-        path_nodes=nodes,
-        edge_lookup=edges,
+    recs = recommend_route(
+        region=region,
+        route=route,
         discs=[disc],
         disc_distances={1: 260},
         style_distances={"backhand": {1: 260}},  # no forehand data
@@ -84,17 +74,12 @@ def test_backhand_only_player_never_gets_forehand(client=None):
 def test_short_forehand_not_picked_beyond_its_range():
     """FH only carries 150 ft — a 250 ft right-bending throw should still
     fall back to the backhand (flex) rather than an underthrown forehand."""
-    nodes = [
-        _node(1, 40.0, -90.0),
-        _node(2, 40.000687, -90.0),
-        _node(3, 40.000687, -89.999103),
-    ]
-    edges = {(1, 2): _edge(1, 2, 250), (2, 3): _edge(2, 3, 250)}
+    region, route = right_dogleg()
     discs = [_disc(1, "Stable", 9.0, 0.0, 2.0), _disc(2, "Flippy", 9.0, -3.0, 1.0)]
 
-    recs = recommend_path(
-        path_nodes=nodes,
-        edge_lookup=edges,
+    recs = recommend_route(
+        region=region,
+        route=route,
         discs=discs,
         disc_distances={1: 260, 2: 260},
         style_distances={
@@ -176,18 +161,13 @@ def test_throw_style_profile_validation(client):
 
 
 def test_disabled_style_never_recommended():
-    nodes = [
-        _node(1, 40.0, -90.0),
-        _node(2, 40.000687, -90.0),
-        _node(3, 40.000687, -89.999103),
-    ]
-    edges = {(1, 2): _edge(1, 2, 250), (2, 3): _edge(2, 3, 250)}
+    region, route = right_dogleg()
     disc = _disc(1, "Stable", 9.0, 0.0, 2.0)
 
     # FH data exists and fits the right dogleg, but the profile is BH-only
-    recs = recommend_path(
-        path_nodes=nodes,
-        edge_lookup=edges,
+    recs = recommend_route(
+        region=region,
+        route=route,
         discs=[disc],
         disc_distances={1: 260},
         style_distances={"backhand": {1: 260}, "forehand": {1: 260}},
@@ -200,17 +180,12 @@ def test_disabled_style_never_recommended():
 def test_lefty_backhand_owns_right_dogleg():
     """LHBH fades right — a right-bending hole is hyzer territory for a lefty
     backhand, no forehand needed."""
-    nodes = [
-        _node(1, 40.0, -90.0),
-        _node(2, 40.000687, -90.0),
-        _node(3, 40.000687, -89.999103),
-    ]
-    edges = {(1, 2): _edge(1, 2, 250), (2, 3): _edge(2, 3, 250)}
+    region, route = right_dogleg()
     disc = _disc(1, "Stable", 9.0, 0.0, 2.0)
 
-    recs = recommend_path(
-        path_nodes=nodes,
-        edge_lookup=edges,
+    recs = recommend_route(
+        region=region,
+        route=route,
         discs=[disc],
         disc_distances={1: 260},
         style_distances={"backhand": {1: 260}},

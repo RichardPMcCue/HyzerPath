@@ -200,6 +200,10 @@ class Hole(Base):
     par = Column(Integer, nullable=False)
     distance = Column(Integer)
     elevation = Column(Integer)
+    # JSON array of [lat, lng] pairs outlining the playable fairway (open ring,
+    # same format as HoleHazard.polygon). The playing line is derived from this
+    # polygon at request time — there is no stored centerline.
+    fairway_polygon = Column(Text)
     updated_at = Column(DateTime, onupdate=utcnow)
     is_approved = Column(Boolean)
 

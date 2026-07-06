@@ -13,21 +13,23 @@ def seed_course(client):
 
 
 def seed_mapped_hole(client, cid):
-    """Hole with tee -> LZ -> basket along a north line, with GPS."""
+    """Hole with GPS tee + basket along a north line and a straight 60ft-wide
+    fairway polygon around the line."""
     hid = client.post(f"/courses/{cid}/holes", json={
         "hole_number": 3, "par": 3, "distance": 300, "elevation": 0
     }).json()["hole_id"]
     ids = {}
-    for node_type, seq, lat in (("tee", 0, 40.0), ("landing_zone", 1, 40.0 + 150 / 364000), ("basket", 2, 40.0 + 300 / 364000)):
+    for node_type, seq, lat in (("tee", 0, 40.0), ("basket", 1, 40.0 + 300 / 364000)):
         ids[node_type] = client.post(f"/courses/{cid}/holes/{hid}/nodes", json={
             "node_type": node_type, "sequence": seq, "latitude": lat, "longitude": -105.0
         }).json()["hole_node_id"]
-    client.post(f"/courses/{cid}/holes/{hid}/edges", json={
-        "from_node_id": ids["tee"], "to_node_id": ids["landing_zone"], "distance": 150
-    })
-    client.post(f"/courses/{cid}/holes/{hid}/edges", json={
-        "from_node_id": ids["landing_zone"], "to_node_id": ids["basket"], "distance": 150
-    })
+    half_lng = 30 / 278000  # ~30ft of longitude at this latitude
+    client.patch(f"/courses/{cid}/holes/{hid}", json={"fairway_polygon": [
+        [40.0 - 10 / 364000, -105.0 - half_lng],
+        [40.0 - 10 / 364000, -105.0 + half_lng],
+        [40.0 + 310 / 364000, -105.0 + half_lng],
+        [40.0 + 310 / 364000, -105.0 - half_lng],
+    ]})
     return hid, ids
 
 
@@ -90,12 +92,11 @@ def test_path_from_lie_replans(client):
     ).json()
     recs = from_lie["recommendations"]
     assert len(recs) == 1
-    assert recs[0]["from_node_id"] == 0  # the virtual lie node
-    assert recs[0]["to_node_id"] == ids["basket"]
+    # the throw starts at the lie and targets the basket
+    assert abs(recs[0]["start_latitude"] - lie_lat) < 1e-6
+    assert abs(recs[0]["target_latitude"] - (40.0 + 300 / 364000)) < 1e-5
     assert abs(recs[0]["distance"] - 120) <= 5
     assert recs[0]["throw_type"] == "approach"
-    # The lie appears in the returned path nodes
-    assert from_lie["nodes"][0]["label"] == "Your lie"
 
 
 def test_record_round_throws_and_stats(client):
