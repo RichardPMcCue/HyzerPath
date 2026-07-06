@@ -7,6 +7,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-96%20passing-brightgreen)
 ![Live](https://img.shields.io/badge/live-hp.rmccue.dev-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 HyzerPath is an intelligent disc golf caddie. It models each hole as a fairway polygon, derives the optimal playing line from tee to basket with computational geometry, and recommends specific discs from the player's bag for each throw based on their personal measured throw distances. It is live at [hp.rmccue.dev](https://hp.rmccue.dev).
 
