@@ -180,3 +180,43 @@ def test_delete_node(client):
     r = client.delete(f"/courses/{cid}/holes/{hid}/nodes/{tee['hole_node_id']}")
     assert r.status_code == 200
     assert len(client.get(f"/courses/{cid}/holes/{hid}/nodes").json()) == 1
+
+
+def test_unmeasured_bag_still_plans_via_defaults(client):
+    """A disc with no measured/entered stat still gets recommended, using the
+    player's estimated drive to seed a default distance."""
+    cid = make_course(client)
+    hid = straight_hole(client, cid)
+    # a disc, but deliberately NO /stats call — nothing measured
+    client.post("/bag/discs", json={
+        "name": "Wraith", "manufacturer": "Innova", "disc_type": "distance_driver",
+        "speed": 11.0, "glide": 5.0, "turn": -1.0, "fade": 3.0,
+    })
+    recs = client.get(f"/courses/{cid}/holes/{hid}/path").json()["recommendations"]
+    assert len(recs) >= 1  # would be empty before defaults existed
+    assert recs[0].get("disc")
+
+
+def test_estimated_drive_scales_defaults(client):
+    """A longer estimated drive plans fewer throws on the same hole."""
+    cid = make_course(client)
+    hid = straight_hole(client, cid)
+    client.post("/bag/discs", json={
+        "name": "Wraith", "manufacturer": "Innova", "disc_type": "distance_driver",
+        "speed": 11.0, "glide": 5.0, "turn": -1.0, "fade": 3.0,
+    })
+    client.patch("/auth/me", json={"estimated_drive_ft": 250})
+    weak = client.get(f"/courses/{cid}/holes/{hid}/path").json()["recommendations"]
+    client.patch("/auth/me", json={"estimated_drive_ft": 500})
+    strong = client.get(f"/courses/{cid}/holes/{hid}/path").json()["recommendations"]
+    assert len(strong) <= len(weak)
+
+
+def test_default_distance_curve():
+    from app.recommendation import default_distance
+    # speed-12 driver reaches the full reference (as a max), avg is 85% of it
+    avg, mx = default_distance(12.0, 400)
+    assert mx == 400 and avg == 340
+    # a putter keeps a big fraction — not speed/12 of a driver
+    p_avg, p_max = default_distance(2.0, 400)
+    assert p_max > 200 and p_max < mx

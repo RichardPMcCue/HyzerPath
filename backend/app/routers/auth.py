@@ -21,11 +21,13 @@ class MeResponse(BaseModel):
     email: str
     name: str | None = None
     username: str | None = None
+    estimated_drive_ft: int | None = None
     is_admin: bool | None = None
 
 
 class MeUpdate(BaseModel):
-    username: str
+    username: str | None = None
+    estimated_drive_ft: int | None = None
 
 
 @router.get("/me", response_model=MeResponse)
@@ -39,17 +41,23 @@ async def update_me(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    username = update.username.strip()
-    if not (2 <= len(username) <= 30):
-        raise HTTPException(status_code=400, detail="Username must be 2-30 characters")
+    if update.username is not None:
+        username = update.username.strip()
+        if not (2 <= len(username) <= 30):
+            raise HTTPException(status_code=400, detail="Username must be 2-30 characters")
+        taken = db.query(User).filter(
+            User.username == username, User.user_id != current_user.user_id
+        ).first()
+        if taken is not None:
+            raise HTTPException(status_code=409, detail="Username is already taken")
+        current_user.username = username
 
-    taken = db.query(User).filter(
-        User.username == username, User.user_id != current_user.user_id
-    ).first()
-    if taken is not None:
-        raise HTTPException(status_code=409, detail="Username is already taken")
+    if update.estimated_drive_ft is not None:
+        drive = update.estimated_drive_ft
+        if not (100 <= drive <= 800):
+            raise HTTPException(status_code=400, detail="Drive distance must be 100-800 ft")
+        current_user.estimated_drive_ft = drive
 
-    current_user.username = username
     db.commit()
     db.refresh(current_user)
     return current_user

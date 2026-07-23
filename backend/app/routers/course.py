@@ -8,7 +8,10 @@ from app.models import Course, User, Hole, HoleNode, HoleHazard, Disc, UserDiscS
 from app.schemas import CourseCreate, CourseResponse, CourseUpdate, HoleCreate, HoleResponse, HoleUpdate, HoleNodeResponse, HolePathResponse, HoleNodeCreate, HoleNodeUpdate, HazardCreate, HazardResponse
 from app.dependencies import get_current_user, get_current_admin
 from app.fairway import FairwayRegion, MODE_EROSION_FT, corridor_ring
-from app.recommendation import recommend_route, player_reach, flatten_style_distances
+from app.recommendation import (
+    recommend_route, player_reach, flatten_style_distances,
+    default_distance, DEFAULT_DRIVE_FT,
+)
 from app.wind import get_wind
 
 router = APIRouter(prefix="/courses", tags=["course"])
@@ -247,8 +250,6 @@ async def get_path(
         style = stat.throw_style or "backhand"
         style_distances.setdefault(style, {})[stat.disc_id] = stat.avg_distance
         style_max.setdefault(style, {})[stat.disc_id] = stat.max_distance
-    disc_distances = flatten_style_distances(style_distances)
-    disc_max_distances = flatten_style_distances(style_max)
 
     style_rows = db.query(UserThrowStyle).filter(
         UserThrowStyle.user_id == current_user.user_id
@@ -257,6 +258,21 @@ async def get_path(
     style_priority = {r.throw_type: r.priority for r in style_rows}
     allowed_styles = [r.throw_type for r in style_rows] or None
     style_hands = {r.throw_type: r.hand for r in style_rows}
+
+    # Seed defaults for discs the player hasn't measured, so a fresh bag still
+    # plans. Never written to UserDiscStat — a real measurement overrides it.
+    reference_ft = current_user.estimated_drive_ft or DEFAULT_DRIVE_FT
+    for style in (allowed_styles or ["backhand"]):
+        sd = style_distances.setdefault(style, {})
+        sm = style_max.setdefault(style, {})
+        for d in discs:
+            if not sd.get(d.disc_id):
+                avg, mx = default_distance(d.speed, reference_ft)
+                sd[d.disc_id] = avg
+                sm[d.disc_id] = mx
+
+    disc_distances = flatten_style_distances(style_distances)
+    disc_max_distances = flatten_style_distances(style_max)
 
     # Wind: explicit params win; otherwise fetch live conditions at the start
     resolved_wind_speed = wind_speed or 0.0

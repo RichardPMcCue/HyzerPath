@@ -278,6 +278,23 @@ def score_disc(disc, base_distance: float, required_distance: float, desired_sta
     return distance_score + flight_score + control_score + effort_score + lateral_score + shape_risk
 
 
+# Default distances for discs the player hasn't measured, seeded from one
+# estimated best-driver number so the engine works out of the box. The
+# estimate is a MAX-effort drive (what players quote); avg is derived below.
+DEFAULT_DRIVE_FT = 350  # intermediate fallback when the player set nothing
+AVG_FROM_MAX = 0.85     # controlled line ~ 85% of the max line (inverse ~1.18)
+
+
+def default_distance(speed, reference_ft: float) -> tuple[int, int]:
+    """(avg, max) for an unmeasured disc, from the player's best driver
+    distance. Fraction of driver distance rises with disc speed but keeps a
+    floor — a putter isn't speed/12 of a driver, it still flies far. So a
+    speed-12 driver reaches the full reference, a putter ~55%."""
+    frac = min(1.0, max(0.45, 0.45 + 0.046 * (speed if speed is not None else 9.0)))
+    mx = round(reference_ft * frac)
+    return round(mx * AVG_FROM_MAX), mx
+
+
 def player_reach(discs: list, disc_distances: dict, disc_max_distances: dict, mode: str) -> float:
     """The longest single throw the engine will plan around, per mode."""
     if not discs:

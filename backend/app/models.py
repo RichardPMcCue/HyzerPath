@@ -18,6 +18,10 @@ class User(Base):
     google_id = Column(String, unique=True, nullable=False)
     name = Column(String)
     username = Column(String, unique=True)
+    # Player's estimated best (max-effort) driver distance in feet. Seeds
+    # default per-disc distances for discs the player hasn't measured yet;
+    # null until they answer the first-login prompt.
+    estimated_drive_ft = Column(Integer)
     created_at = Column(DateTime, default=utcnow)
     is_admin = Column(Boolean)
 
