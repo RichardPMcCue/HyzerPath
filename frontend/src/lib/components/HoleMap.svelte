@@ -3,6 +3,7 @@
 	import maplibregl from 'maplibre-gl';
 	import type { Feature, FeatureCollection } from 'geojson';
 	import { autoResize, satelliteStyle } from '$lib/map';
+	import { flightGroundTrack } from '$lib/flightPath';
 	import type { Hazard, HoleNode, SegmentRecommendation } from '$lib/types';
 
 	let {
@@ -47,15 +48,20 @@
 		const features: Feature[] = [];
 		for (const rec of recommendations) {
 			if (rec.start_latitude == null || rec.target_latitude == null) continue;
+			// curved ground track shaped like the recommended flight, not a chord
 			features.push({
 				type: 'Feature',
 				properties: {},
 				geometry: {
 					type: 'LineString',
-					coordinates: [
-						[rec.start_longitude!, rec.start_latitude],
-						[rec.target_longitude!, rec.target_latitude]
-					]
+					coordinates: flightGroundTrack(
+						rec.start_latitude,
+						rec.start_longitude!,
+						rec.target_latitude,
+						rec.target_longitude!,
+						rec.shot_shape,
+						rec.throw_style
+					)
 				}
 			});
 		}
