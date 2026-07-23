@@ -3,6 +3,7 @@ export interface Me {
 	email: string;
 	name: string | null;
 	username: string | null;
+	estimated_drive_ft: number | null;
 	is_admin: boolean | null;
 }
 

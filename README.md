@@ -5,7 +5,7 @@
 ![SvelteKit](https://img.shields.io/badge/SvelteKit-2-orange)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-98%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-101%20passing-brightgreen)
 ![Live](https://img.shields.io/badge/live-hp.rmccue.dev-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 

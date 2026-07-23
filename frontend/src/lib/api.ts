@@ -101,7 +101,7 @@ export const api = {
 
 	// --- auth ---
 	getMe: () => request<Me>('/auth/me'),
-	updateMe: (update: { username: string }) =>
+	updateMe: (update: { username?: string; estimated_drive_ft?: number }) =>
 		request<Me>('/auth/me', { method: 'PATCH', body: JSON.stringify(update) }),
 	getThrowStyles: () => request<ThrowStyleRow[]>('/auth/me/throw-styles'),
 	setThrowStyles: (rows: ThrowStyleRow[]) =>

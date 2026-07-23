@@ -6,6 +6,7 @@
 	import { auth } from '$lib/auth.svelte';
 	import { api } from '$lib/api';
 	import BottomNav from '$lib/components/BottomNav.svelte';
+	import DriveEstimatePrompt from '$lib/components/DriveEstimatePrompt.svelte';
 
 	let { children } = $props();
 
@@ -39,6 +40,10 @@
 	});
 
 	const onLoginPage = $derived(page.url.pathname === '/login');
+	// First-login nudge: prompt for a driver estimate until it's set
+	const needsDriveEstimate = $derived(
+		auth.isLoggedIn && auth.user != null && auth.user.estimated_drive_ft == null
+	);
 </script>
 
 {#if ready}
@@ -47,5 +52,8 @@
 	</div>
 	{#if !onLoginPage && auth.isLoggedIn}
 		<BottomNav />
+	{/if}
+	{#if !onLoginPage && needsDriveEstimate}
+		<DriveEstimatePrompt />
 	{/if}
 {/if}

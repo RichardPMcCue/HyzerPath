@@ -62,6 +62,37 @@
 		}
 	}
 
+	// --- Estimated driver distance: seeds defaults for unmeasured discs ---
+	let drive = $state<number | null>(null);
+	let driveLoaded = $state(false);
+	let savingDrive = $state(false);
+	let driveSaved = $state(false);
+
+	$effect(() => {
+		if (!driveLoaded && auth.user) {
+			drive = auth.user.estimated_drive_ft ?? null;
+			driveLoaded = true;
+		}
+	});
+
+	const driveDirty = $derived(
+		driveLoaded && drive != null && drive >= 100 && drive <= 800 &&
+			drive !== (auth.user?.estimated_drive_ft ?? null)
+	);
+
+	async function saveDrive() {
+		if (drive == null) return;
+		savingDrive = true;
+		try {
+			const me = await api.updateMe({ estimated_drive_ft: drive });
+			auth.setUser(me);
+			driveSaved = true;
+			setTimeout(() => (driveSaved = false), 2000);
+		} finally {
+			savingDrive = false;
+		}
+	}
+
 	$effect(() => {
 		Promise.all([api.listRounds(), api.getCourses()])
 			.then(([r, c]) => {
@@ -245,6 +276,39 @@
 				Session expires {new Date(payload.exp * 1000).toLocaleDateString()}
 			</p>
 		{/if}
+
+		<div class="mt-4 border-t border-edge pt-3">
+			<label class="text-xs font-semibold tracking-wide text-ink-dim uppercase" for="drive-est">
+				Estimated driver distance
+			</label>
+			<div class="mt-1.5 flex gap-2">
+				<input
+					id="drive-est"
+					type="number"
+					min="100"
+					max="800"
+					placeholder="350"
+					bind:value={drive}
+					class="min-w-0 flex-1 rounded-xl border border-edge bg-card-raised px-3 py-2 text-sm font-semibold placeholder:font-normal placeholder:text-ink-dim focus:border-accent focus:outline-none"
+				/>
+				<span class="flex items-center text-sm text-ink-dim">ft</span>
+				{#if driveDirty}
+					<button
+						class="rounded-xl bg-accent px-3.5 py-2 text-sm font-bold text-surface transition active:scale-95 disabled:opacity-50"
+						onclick={saveDrive}
+						disabled={savingDrive}
+					>
+						{savingDrive ? '…' : 'Save'}
+					</button>
+				{:else if driveSaved}
+					<span class="flex items-center px-2 text-sm text-accent">✓</span>
+				{/if}
+			</div>
+			<p class="mt-1.5 text-xs text-ink-dim">
+				Your best drive. Seeds distances for discs you haven't measured;
+				measuring a disc always overrides it.
+			</p>
+		</div>
 	</div>
 
 	<!-- Lifetime stats -->
