@@ -4,11 +4,13 @@
 
 	// Shown once on first login (while estimated_drive_ft is null) to seed
 	// default disc distances until the player measures real ones.
+	// Typical best-drive per tier (a representative value, not a range edge —
+	// clicking fills the exact field below so you can fine-tune).
 	const TIERS = [
-		{ label: 'Beginner', ft: 250, hint: 'up to ~275 ft' },
-		{ label: 'Intermediate', ft: 350, hint: '~275–375 ft' },
-		{ label: 'Advanced', ft: 425, hint: '~375–450 ft' },
-		{ label: 'Pro', ft: 500, hint: '450 ft +' }
+		{ label: 'Beginner', ft: 250, hint: '~250 ft' },
+		{ label: 'Intermediate', ft: 350, hint: '~350 ft' },
+		{ label: 'Advanced', ft: 425, hint: '~425 ft' },
+		{ label: 'Pro', ft: 500, hint: '~500 ft' }
 	];
 
 	let value = $state(350);
