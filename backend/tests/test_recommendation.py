@@ -285,7 +285,7 @@ def test_recovery_flagged_when_lie_outside_fairway():
     assert all(not r.is_recovery for r in recs[1:])
 
 
-def test_hazard_chord_tagging():
+def test_hazard_route_tagging():
     region, route = corridor(300)
     strip = [ll(-40, 140), ll(40, 140), ll(40, 160), ll(-40, 160)]  # across the fairway
     recs = recommend_route(
