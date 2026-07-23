@@ -296,3 +296,38 @@ def test_hazard_chord_tagging():
     )
     assert len(recs) == 1
     assert "water" in recs[0].hazards
+
+
+def test_hazard_not_tagged_when_route_bends_around():
+    """A shaped line that follows the corridor around a hazard shouldn't be
+    warned just because the straight chord clips it."""
+    from app.fairway import corridor_ring
+    import math as _m
+    # 40deg dogleg: bend is shapeable (<50deg cap), so one throw flies it
+    bend = _m.radians(40)
+    elbow = (0.0, 200.0)
+    basket_xy = (200 * _m.sin(bend), 200 + 200 * _m.cos(bend))
+    ring = corridor_ring([ll(0, 0), ll(*elbow), ll(*basket_xy)], half_width_ft=30)
+    region = FairwayRegion(ring)
+    route = region.route(ll(0, 0), ll(*basket_xy), erosion_ft=15)
+    # hazard in the elbow, outside the fairway: the tee->basket chord crosses
+    # it, the routed corridor does not
+    box = [ll(60, 190), ll(90, 190), ll(90, 220), ll(60, 220)]
+    recs = recommend_route(
+        region=region, route=route,
+        discs=[FakeDisc(1, "Wraith", fade=2.0, turn=-1.0)],
+        disc_distances={1: 450}, mode="balanced",
+        hazard_polygons=[("trees", box)],
+    )
+    assert len(recs) == 1
+    assert recs[0].hazards == []
+
+
+def test_turn_side_shape_risk_penalty():
+    """A committed anhyzer/turnover line costs SHAPE_RISK_PENALTY vs the
+    mirror-image hyzer at identical flight fit."""
+    from app.recommendation import score_disc, SHAPE_RISK_PENALTY
+    d = FakeDisc(1, "Neutral", fade=1.0, turn=-1.0)  # net stability 0
+    hyzer_side = score_disc(d, 300, 300, desired_stability=1.0)
+    anny_side = score_disc(d, 300, 300, desired_stability=-1.0)
+    assert hyzer_side - anny_side == pytest.approx(SHAPE_RISK_PENALTY)

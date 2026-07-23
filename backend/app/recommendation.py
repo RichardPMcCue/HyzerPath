@@ -65,6 +65,13 @@ CONTROL_PENALTY = {
     "putt": 0.3,
 }
 
+# A line that must finish on the turn side (anhyzer/turnover family) is a
+# lower-percentage release than a hyzer at equal flight fit — the throw fights
+# the disc's natural finish. Applied when the corridor demands a committed
+# turn-side shape (desired_stability at/under -SHAPE_THRESHOLD_DEG/15), which
+# also makes the mirrored style's hyzer read comparatively cheaper.
+SHAPE_RISK_PENALTY = 0.25
+
 
 def classify_throw(distance: float, is_final: bool, reach: float) -> str:
     """What job does this throw have? Final throws are putts (inside C1-ish)
@@ -265,7 +272,10 @@ def score_disc(disc, base_distance: float, required_distance: float, desired_sta
     tight_scale = MODE_TIGHTNESS_SCALE.get(mode, 1.0)
     effort_score = -(BASE_EFFORT_PENALTY + tight_scale * W_EFFORT * tightness) * effort
     lateral_score = -tight_scale * W_LAT * tightness * lateral_movement(disc)
-    return distance_score + flight_score + control_score + effort_score + lateral_score
+    # Technique risk: a committed turn-side (anhyzer/turnover) line is a
+    # lower-percentage release than a hyzer at equal fit.
+    shape_risk = -SHAPE_RISK_PENALTY if desired_stability <= -(SHAPE_THRESHOLD_DEG / 15.0) else 0.0
+    return distance_score + flight_score + control_score + effort_score + lateral_score + shape_risk
 
 
 def player_reach(discs: list, disc_distances: dict, disc_max_distances: dict, mode: str) -> float:
@@ -493,11 +503,29 @@ def recommend_route(
             target_latitude=target_pt[0],
             target_longitude=target_pt[1],
             is_recovery=is_recovery,
-            # The straight chord is the flight's ground line: tag hazards it crosses
+            # The flight follows the derived route's corridor, not the straight
+            # chord — tag hazards the route span actually crosses, so a shaped
+            # line that bends around drawn trees isn't falsely warned.
             hazards=[
                 htype for htype, poly in hazard_polygons
-                if segment_crosses_polygon(start_pt[0], start_pt[1], target_pt[0], target_pt[1], poly)
+                if _span_crosses_polygon(region, route, d0, d1, poly)
             ],
         ))
 
     return recommendations
+
+
+def _span_crosses_polygon(region, route, d0: float, d1: float, poly, step_ft: float = 25.0) -> bool:
+    """Does the route between distances d0..d1 enter the polygon? Sampled at
+    step_ft so a throw is judged on the corridor it actually flies."""
+    pts = []
+    d = d0
+    while True:
+        pts.append(region.point_along_route(route, min(d, d1)))
+        if d >= d1:
+            break
+        d += step_ft
+    return any(
+        segment_crosses_polygon(a[0], a[1], b[0], b[1], poly)
+        for a, b in zip(pts, pts[1:])
+    )
