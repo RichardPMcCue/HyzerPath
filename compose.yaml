@@ -1,9 +1,10 @@
 services:
   backend:
     build: ./backend
+    env_file:
+      - compose.env
     environment:
       ROOT_PATH: /api
-      # New: points the backend at the db service by name
       DATABASE_URL: postgresql://hyzerpath:localdevonly@db:5432/hyzerpath
     depends_on:
       - db
