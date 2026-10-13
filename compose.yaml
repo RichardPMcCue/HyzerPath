@@ -3,6 +3,10 @@ services:
     build: ./backend
     environment:
       ROOT_PATH: /api
+      # New: points the backend at the db service by name
+      DATABASE_URL: postgresql://hyzerpath:localdevonly@db:5432/hyzerpath
+    depends_on:
+      - db
 
   frontend:
     build: ./frontend
@@ -10,3 +14,17 @@ services:
       - "8080:80"
     depends_on:
       - backend
+
+  # New: the database
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: hyzerpath
+      POSTGRES_PASSWORD: localdevonly
+      POSTGRES_DB: hyzerpath
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+# New: a named volume, declared at the top level
+volumes:
+  pgdata:
