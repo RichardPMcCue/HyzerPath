@@ -10,7 +10,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: hyzerpath-backend:v1
+          image: hyzerpath-backend:v2
           command: ["alembic", "upgrade", "head"]
           env:
             - name: DATABASE_URL

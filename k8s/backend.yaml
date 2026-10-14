@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: hyzerpath-backend:v1
+          image: hyzerpath-backend:v2
           ports:
             - containerPort: 8000
           envFrom:
@@ -23,9 +23,13 @@ spec:
                 name: backend-config
             - secretRef:
                 name: backend-secrets
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
           readinessProbe:
             httpGet:
-              path: /openapi.json
+              path: /health
               port: 8000
             periodSeconds: 5
 ---
