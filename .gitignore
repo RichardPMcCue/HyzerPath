@@ -11,3 +11,4 @@ dist/
 test.db
 .claude/
 docs/internal/
+.gitignore
