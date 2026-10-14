@@ -2,13 +2,17 @@ import logging
 import os
 import subprocess
 import time
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
 from dotenv import load_dotenv
 from app.logging_config import configure_logging
 from app.ratelimit import FixedWindowLimiter, client_ip
 from app.routers import bag, auth, course, throws, rounds
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+from app.database import get_db
 
 load_dotenv()
 configure_logging()
@@ -80,6 +84,16 @@ app.include_router(auth.router)
 app.include_router(course.router)
 app.include_router(throws.router)
 app.include_router(rounds.router)
+
+@app.get("/health", include_in_schema=False)
+def health(db: Session = Depends(get_db)):
+    """Readiness check: is this instance able to reach the database?"""
+    try:
+        db.execute(text("SELECT 1"))
+    except SQLAlchemyError as e:
+        logger.warning("health check failed: database unreachable", extra={"error": str(e)})
+        raise HTTPException(status_code=503, detail="Database health check failed")
+    return {"status": "ok"}
 
 def custom_openapi():
     if app.openapi_schema:
