@@ -12,3 +12,4 @@ test.db
 .claude/
 docs/internal/
 compose.env
+.gitignore
