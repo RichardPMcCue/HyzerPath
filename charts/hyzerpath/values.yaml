@@ -1,4 +1,12 @@
 backend:
+  image: hyzerpath-backend
+  tag: v2
+  replicas: 2
   config:
     redirectUri: http://localhost:8081/api/auth/callback
     frontendUrl: http://localhost:8081
+
+frontend:
+  image: hyzerpath-frontend
+  tag: v1
+  replicas: 2
