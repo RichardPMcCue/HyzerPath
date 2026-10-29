@@ -1,0 +1,4 @@
+backend:
+  config:
+    redirectUri: http://localhost:8081/api/auth/callback
+    frontendUrl: http://localhost:8081
