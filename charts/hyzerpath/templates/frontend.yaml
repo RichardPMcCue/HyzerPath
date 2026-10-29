@@ -38,6 +38,9 @@ kind: Ingress
 metadata:
   name: hyzerpath
 spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
   rules:
     - http:
         paths:
@@ -48,3 +51,6 @@ spec:
                 name: frontend
                 port:
                   number: 80
+      {{- with .Values.ingress.host }}
+      host: {{ . | quote }}
+      {{- end }}

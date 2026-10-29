@@ -10,3 +10,7 @@ frontend:
   image: hyzerpath-frontend
   tag: v1
   replicas: 2
+
+ingress:
+  host: ""
+  className: ""
