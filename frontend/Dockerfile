@@ -14,6 +14,8 @@ RUN npm run build
 
 FROM nginx:alpine
 
+LABEL org.opencontainers.image.source="https://github.com/RichardPMcCue/HyzerPath"
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 COPY --from=build /app/build /usr/share/nginx/html
