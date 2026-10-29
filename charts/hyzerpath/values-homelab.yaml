@@ -2,13 +2,13 @@ backend:
   image: ghcr.io/richardpmccue/hyzerpath-backend
   replicas: 1
   config:
-    redirectUri: https://kube.rmccue.dev/api/auth/callback
-    frontendUrl: https://kube.rmccue.dev
+    redirectUri: https://hp-kube.rmccue.dev/api/auth/callback
+    frontendUrl: https://hp-kube.rmccue.dev
 
 frontend:
   image: ghcr.io/richardpmccue/hyzerpath-frontend
   replicas: 1
 
 ingress:
-  host: kube.rmccue.dev
+  host: hp-kube.rmccue.dev
   className: traefik
