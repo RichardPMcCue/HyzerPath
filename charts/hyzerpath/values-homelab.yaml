@@ -7,7 +7,7 @@ backend:
     frontendUrl: https://hp-kube.rmccue.dev
 
 frontend:
-  image: ghcr.io/richardpmccue/hyzerpath-backend
+  image: ghcr.io/richardpmccue/hyzerpath-frontend
   tag: sha-18097c9
   replicas: 1
 
