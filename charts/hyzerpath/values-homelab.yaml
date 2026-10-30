@@ -1,12 +1,14 @@
 backend:
   image: ghcr.io/richardpmccue/hyzerpath-backend
+  tag: sha-18097c9
   replicas: 1
   config:
     redirectUri: https://hp-kube.rmccue.dev/api/auth/callback
     frontendUrl: https://hp-kube.rmccue.dev
 
 frontend:
-  image: ghcr.io/richardpmccue/hyzerpath-frontend
+  image: ghcr.io/richardpmccue/hyzerpath-backend
+  tag: sha-18097c9
   replicas: 1
 
 ingress:

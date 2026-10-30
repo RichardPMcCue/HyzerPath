@@ -3,6 +3,10 @@ name: Build images
 on:
   push:
     branches: [k8s-learning]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - ".github/workflows/images.yml"
 
 permissions:
   contents: read
