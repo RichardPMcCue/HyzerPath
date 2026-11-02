@@ -65,15 +65,16 @@ async def log_requests(request: Request, call_next):
         )
         raise
     duration_ms = round((time.monotonic() - start) * 1000, 1)
-    logger.info(
-        "request",
-        extra={
-            "method": request.method,
-            "path": request.url.path,
-            "status": response.status_code,
-            "duration_ms": duration_ms,
-        },
-    )
+    if request.url.path != "/health":
+        logger.info(
+            "request",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "duration_ms": duration_ms,
+            },
+        )
     return response
 
 
