@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/RichardPMcCue/HyzerPath.git
-    targetRevision: k8s-learning
+    targetRevision: main
     path: charts/hyzerpath
     helm:
       valueFiles:
