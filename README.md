@@ -7,7 +7,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791?logo=postgresql&logoColor=white)
 ![Kubernetes](https://img.shields.io/badge/k3s-Kubernetes-326CE5?logo=kubernetes&logoColor=white)
 ![ArgoCD](https://img.shields.io/badge/deployed%20with-ArgoCD-EF7B4D?logo=argo&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-104%20passing-brightgreen)
+![CI](https://github.com/RichardPMcCue/HyzerPath/actions/workflows/images.yml/badge.svg?branch=main)
 ![Live](https://img.shields.io/badge/live-hp.rmccue.dev-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -45,7 +45,45 @@ The engine then walks the line into individual throws — a flight can shape aro
 
 Throw distances come from the player: a field measuring mode records GPS start and end points per throw, tagged backhand or forehand, feeding the per-disc, per-style averages the engine reads. Wind from Open-Meteo is folded into effective distance at round start.
 
-![HyzerPath architecture](docs/architecture.png)
+```mermaid
+flowchart TB
+    user["Browser<br/>SvelteKit PWA"]
+
+    subgraph cf["Cloudflare"]
+        dns["hp.rmccue.dev<br/>DNS + TLS"]
+        tunnel["Cloudflare Tunnel"]
+    end
+
+    subgraph prox["Proxmox VE host"]
+        cfd["cloudflared"]
+        subgraph vm["k3s VM (single node)"]
+            traefik["Traefik ingress"]
+            subgraph ns["namespace: hyzerpath"]
+                fe["frontend × 2<br/>nginx · static SPA"]
+                be["backend × 2<br/>FastAPI · uvicorn"]
+                pg[("PostgreSQL 17<br/>StatefulSet + PVC")]
+                mig["migrate Job<br/>Alembic, runs before each sync"]
+            end
+        end
+    end
+
+    subgraph ext["External services"]
+        discit["DiscIt API<br/>disc flight numbers"]
+        meteo["Open-Meteo API<br/>wind speed + direction"]
+        google["Google OAuth<br/>user authentication"]
+        arcgis["ArcGIS<br/>satellite imagery"]
+    end
+
+    user --> dns --> tunnel --> cfd --> traefik --> fe
+    fe -- "/api" --> be
+    fe -- "/tiles" --> arcgis
+    be --> pg
+    mig --> pg
+    be --> discit
+    be --> meteo
+    be --> google
+    user -. "OAuth sign-in" .-> google
+```
 
 ## Key engineering decisions
 
@@ -60,12 +98,16 @@ Throw distances come from the player: a field measuring mode records GPS start a
 
 ## Deployment
 
-```
-push to main
-  → GitHub Actions: tests → build amd64 + arm64 images → ghcr.io (tagged sha-<commit>)
-  → bump the tag in charts/hyzerpath/values-homelab.yaml
-  → ArgoCD syncs: migration job → rolling update gated by readiness probes
-  → Traefik → Cloudflare Tunnel → hp.rmccue.dev
+```mermaid
+flowchart LR
+    dev["Developer"] -- "git push" --> repo["GitHub<br/>main branch"]
+    repo -- "app code changed" --> ci["GitHub Actions<br/>pytest → multi-arch build"]
+    ci --> ghcr[("ghcr.io<br/>images tagged by commit SHA")]
+    dev -- "bump image tag in<br/>values-homelab.yaml" --> repo
+    argo["ArgoCD<br/>runs in the cluster"] -- "polls for changes" --> repo
+    argo -- "1 · PreSync" --> mig["migrate Job"]
+    argo -- "2 · rolling update" --> deploy["frontend + backend<br/>Deployments"]
+    deploy -- "pull images" --> ghcr
 ```
 
 Postgres runs as a StatefulSet with persistent storage, managed separately from the app chart so that app operations can never touch the database. Secrets are created out of band and never committed.
