@@ -1,0 +1,17 @@
+global:
+  domain: argocd.rmccue.dev
+
+configs:
+  params:
+    server.insecure: true
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+
+dex:
+  enabled: false
+
+notifications:
+  enabled: false
