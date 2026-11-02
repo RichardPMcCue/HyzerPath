@@ -1,0 +1,6 @@
+apiVersion: v2
+name: hyzerpath
+description: HyzerPath disc golf caddie
+type: application
+version: 0.1.0
+appVersion: "v2"

@@ -1,0 +1,16 @@
+backend:
+  image: ghcr.io/richardpmccue/hyzerpath-backend
+  tag: sha-08033ba
+  replicas: 2
+  config:
+    redirectUri: https://hp.rmccue.dev/api/auth/callback
+    frontendUrl: https://hp.rmccue.dev
+
+frontend:
+  image: ghcr.io/richardpmccue/hyzerpath-frontend
+  tag: sha-08033ba
+  replicas: 2
+
+ingress:
+  host: hp.rmccue.dev
+  className: traefik

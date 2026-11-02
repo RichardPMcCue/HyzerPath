@@ -1,0 +1,46 @@
+services:
+  # New: one-off migration runner. Same image as backend, different command.
+  migrate:
+    build: ./backend
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://hyzerpath:localdevonly@db:5432/hyzerpath
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    env_file:
+      - compose.env
+    environment:
+      ROOT_PATH: /api
+      DATABASE_URL: postgresql://hyzerpath:localdevonly@db:5432/hyzerpath
+    depends_on:
+      # Changed: wait for migrations to finish successfully, not just start
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: hyzerpath
+      POSTGRES_PASSWORD: localdevonly
+      POSTGRES_DB: hyzerpath
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # New: lets other services wait until Postgres actually accepts connections
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "hyzerpath", "-d", "hyzerpath"]
+      interval: 2s
+      timeout: 3s
+
+volumes:
+  pgdata:

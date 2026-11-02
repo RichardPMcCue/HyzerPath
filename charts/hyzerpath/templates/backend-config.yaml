@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  ROOT_PATH: /api
+  REDIRECT_URI: {{ .Values.backend.config.redirectUri | quote }}
+  FRONTEND_URL: {{ .Values.backend.config.frontendUrl | quote }}

@@ -32,6 +32,11 @@ class JsonFormatter(logging.Formatter):
             payload["exc"] = self.formatException(record.exc_info)
         return json.dumps(payload, default=str)
 
+class HealthCheckFilter(logging.Filter):
+    """Drop uvicorn's access-log lines for readiness probes on /health."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/health" not in record.getMessage()
 
 def configure_logging() -> None:
     """Route the root logger (and uvicorn's) through the JSON formatter."""
@@ -48,3 +53,5 @@ def configure_logging() -> None:
         log = logging.getLogger(name)
         log.handlers = []
         log.propagate = True
+    
+    logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
